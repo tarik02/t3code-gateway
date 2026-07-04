@@ -13,9 +13,17 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "t3code" },
+      { title: "T3 Code Gateway" },
+      { name: "application-name", content: "T3 Code Gateway" },
+      { name: "apple-mobile-web-app-title", content: "T3 Code Gateway" },
+      { name: "description", content: "T3 Code Gateway admin console" },
+      { name: "theme-color", content: "#161616" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", href: "/admin/favicon.svg", type: "image/svg+xml" },
+      { rel: "manifest", href: "/admin/site.webmanifest" },
+    ],
   }),
   component: RootComponent,
 });

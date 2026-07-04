@@ -18,13 +18,14 @@ import { configLayer, GatewayRuntimeConfig } from "../config.ts";
 import { layer as environmentServiceLayer } from "../environments/service.ts";
 import { layer as gatewayDbLayer } from "../db/client.ts";
 import { ensureDatabaseDirectory, runMigrations } from "../db/migrate.ts";
+import { layer as adminWebRoutesLayer } from "./admin-web-routes.ts";
 import { layer as authRoutesLayer } from "./auth-routes.ts";
 import { layer as environmentRoutesLayer } from "./environment-routes.ts";
 import { layer as gatewaySessionMiddlewareLayer } from "./gateway-session-middleware.ts";
 import { layer as rpcHandlersLayer } from "./rpc-handlers.ts";
 import { layer as t3codeWebRoutesLayer } from "./t3code-web-routes.ts";
 import { layer as traefikRoutesLayer } from "./traefik-routes.ts";
-import { withSessionGuard } from "./session-guard.ts";
+import { sessionGuard } from "./session-guard.ts";
 import { layer as authLayer } from "../auth/service.ts";
 import { layer as traefikReconcilerLayer, TraefikReconciler } from "../traefik/reconciler.ts";
 
@@ -71,6 +72,7 @@ const gatewayRpcLayer = RpcServer.layerHttp({
 }).pipe(Layer.provide(rpcHandlersLayer), Layer.provide(RpcSerialization.layerJson));
 
 const routesLayer = Layer.mergeAll(
+  adminWebRoutesLayer,
   authRoutesLayer,
   gatewayRpcLayer,
   environmentRoutesLayer,
@@ -137,7 +139,7 @@ const serverLayer = Layer.unwrap(
 ).pipe(Layer.provide(foundationLayer));
 
 const serveLayer = HttpRouter.serve(gatewayAppLayer, {
-  middleware: (handler) => withSessionGuard(handler).pipe(Effect.orDie),
+  middleware: (handler) => sessionGuard(handler).pipe(Effect.orDie),
 });
 
 export const runtimeLayer = serveLayer.pipe(

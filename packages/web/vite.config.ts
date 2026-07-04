@@ -31,6 +31,12 @@ export default defineConfig({
             outputPath: "index.html",
           },
         },
+        {
+          path: "/admin/login",
+          prerender: {
+            crawlLinks: false,
+          },
+        },
       ],
       prerender: {
         autoStaticPathsDiscovery: false,

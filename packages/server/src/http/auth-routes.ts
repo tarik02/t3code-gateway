@@ -19,15 +19,13 @@ import { buildGatewayStatus } from "./status.ts";
 const isSecureRequest = (request: HttpServerRequest.HttpServerRequest) =>
   request.originalUrl.startsWith("https://") || request.headers["x-forwarded-proto"] === "https";
 
-const withJson = <A>(body: A) => HttpServerResponse.json(body);
-
 const authFailure = (message: string) =>
-  withJson({ error: message }).pipe(
+  HttpServerResponse.json({ error: message }).pipe(
     Effect.map((response) => HttpServerResponse.setStatus(response, 401)),
   );
 
 const internalFailure = (message: string) =>
-  withJson({ error: message }).pipe(
+  HttpServerResponse.json({ error: message }).pipe(
     Effect.map((response) => HttpServerResponse.setStatus(response, 500)),
   );
 
@@ -40,7 +38,9 @@ export const layer = Layer.effectDiscard(
       Effect.gen(function* () {
         const payload = yield* HttpServerRequest.schemaBodyJson(LoginRequest).pipe(Effect.orDie);
         const result = yield* auth.login(payload.username, payload.password);
-        const response = yield* withJson({ user: result.user } satisfies LoginResponse);
+        const response = yield* HttpServerResponse.json({
+          user: result.user,
+        } satisfies LoginResponse);
         return HttpServerResponse.setCookieUnsafe(
           response,
           SESSION_COOKIE_NAME,
@@ -69,7 +69,7 @@ export const layer = Layer.effectDiscard(
     yield* router.add("GET", "/api/gateway/auth/me", (request) =>
       Effect.gen(function* () {
         const user = yield* auth.currentUser(readSessionToken(request.cookies));
-        return yield* withJson(user satisfies CurrentUser | null);
+        return yield* HttpServerResponse.json(user satisfies CurrentUser | null);
       }).pipe(Effect.catchTag("DatabaseError", (error) => internalFailure(error.message))),
     );
 
@@ -95,7 +95,7 @@ export const layer = Layer.effectDiscard(
     yield* router.add("GET", "/api/gateway/status", () =>
       Effect.gen(function* () {
         const status = yield* buildGatewayStatus;
-        return yield* withJson(status satisfies GatewayStatus);
+        return yield* HttpServerResponse.json(status satisfies GatewayStatus);
       }),
     );
   }),

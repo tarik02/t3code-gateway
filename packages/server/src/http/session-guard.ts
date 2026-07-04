@@ -5,38 +5,44 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { AuthService } from "../auth/service.ts";
 import { readSessionToken } from "./cookies.ts";
 
-const requestPath = (url: string) => {
-  const queryIndex = url.indexOf("?");
-  return queryIndex === -1 ? url : url.slice(0, queryIndex);
-};
+const publicGatewayRoutes = new Set([
+  "POST /api/gateway/auth/login",
+  "POST /api/gateway/auth/logout",
+  "GET /api/gateway/auth/me",
+]);
 
-const isPublicGatewayApi = (path: string, method: string) =>
-  (method === "POST" && path === "/api/gateway/auth/login") ||
-  (method === "POST" && path === "/api/gateway/auth/logout") ||
-  (method === "GET" && path === "/api/gateway/auth/me");
+const pathname = (url: string) => new URL(url, "http://gateway.local").pathname;
 
-const isPublicAdminPath = (path: string) =>
-  path === "/admin/login" || path.startsWith("/admin/login/") || path.startsWith("/admin/assets/");
+const sessionRequiredFor = (request: HttpServerRequest.HttpServerRequest) => {
+  const path = pathname(request.url);
 
-const isProtectedRequest = (request: HttpServerRequest.HttpServerRequest) => {
-  const path = requestPath(request.url);
-  const method = request.method;
+  if (publicGatewayRoutes.has(`${request.method} ${path}`)) {
+    return false;
+  }
 
   if (path.startsWith("/api/gateway/")) {
-    return !isPublicGatewayApi(path, method);
+    return true;
   }
 
-  if (path === "/admin" || path.startsWith("/admin/")) {
-    return !isPublicAdminPath(path);
+  if (path === "/admin/login" || path.startsWith("/admin/login/")) {
+    return false;
   }
 
-  return false;
+  if (
+    path.startsWith("/admin/assets/") ||
+    path === "/admin/favicon.svg" ||
+    path === "/admin/site.webmanifest"
+  ) {
+    return false;
+  }
+
+  return path === "/admin" || path.startsWith("/admin/");
 };
 
 const unauthenticatedResponse = (
   request: HttpServerRequest.HttpServerRequest,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> => {
-  const path = requestPath(request.url);
+  const path = pathname(request.url);
 
   if (path === "/admin" || path.startsWith("/admin/")) {
     return Effect.succeed(HttpServerResponse.redirect("/admin/login", { status: 302 }));
@@ -47,7 +53,7 @@ const unauthenticatedResponse = (
   );
 };
 
-export const withSessionGuard = <E, R>(
+export const sessionGuard = <E, R>(
   handler: Effect.Effect<
     HttpServerResponse.HttpServerResponse,
     E,
@@ -61,7 +67,7 @@ export const withSessionGuard = <E, R>(
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
 
-    if (!isProtectedRequest(request)) {
+    if (!sessionRequiredFor(request)) {
       return yield* handler;
     }
 

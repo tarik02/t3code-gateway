@@ -180,7 +180,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       );
 
       if (row === undefined) {
-        return yield* new EnvironmentFailure({ message: "Environment not found" });
+        return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
       return rowToRecord(row);
@@ -225,7 +225,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       );
 
       if (existing === undefined) {
-        return yield* new EnvironmentFailure({ message: "Environment not found" });
+        return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
       const needsRevalidation =
@@ -339,7 +339,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       );
 
       if (existing === undefined) {
-        return yield* new EnvironmentFailure({ message: "Environment not found" });
+        return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
       yield* dbEffect(() =>
@@ -369,7 +369,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       );
 
       if (existing === undefined) {
-        return yield* new EnvironmentFailure({ message: "Environment not found" });
+        return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
       const validated = yield* validateEnvironmentInput(validationContext, input, {
@@ -395,7 +395,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       const row = yield* loadEnvironmentRow(environmentId);
 
       if (row === undefined) {
-        return yield* new EnvironmentFailure({ message: "Environment not found" });
+        return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
       const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
@@ -437,7 +437,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       const row = yield* loadEnvironmentRow(environmentId);
 
       if (row === undefined) {
-        return yield* new EnvironmentFailure({ message: "Environment not found" });
+        return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
       const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
@@ -470,7 +470,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       const row = yield* loadEnvironmentRow(environmentId);
 
       if (row === undefined) {
-        return yield* new EnvironmentFailure({ message: "Environment not found" });
+        return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
       const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);

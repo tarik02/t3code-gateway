@@ -6,8 +6,6 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { TraefikReconciler } from "../traefik/reconciler.ts";
 
-const withJson = <A>(body: A) => HttpServerResponse.json(body).pipe(Effect.orDie);
-
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const router = yield* HttpRouter.HttpRouter;
@@ -16,7 +14,9 @@ export const layer = Layer.effectDiscard(
     yield* router.add("GET", "/api/gateway/traefik/config", () =>
       Effect.gen(function* () {
         const config = yield* traefik.getConfig();
-        return yield* withJson(config satisfies TraefikConfigResponse);
+        return yield* HttpServerResponse.json(config satisfies TraefikConfigResponse).pipe(
+          Effect.orDie,
+        );
       }),
     );
   }),

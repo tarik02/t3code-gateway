@@ -163,6 +163,7 @@ export class EnvironmentFailure extends Schema.TaggedErrorClass<EnvironmentFailu
   "EnvironmentFailure",
   {
     message: Schema.String,
+    status: Schema.optional(Schema.Number),
   },
 ) {}
 

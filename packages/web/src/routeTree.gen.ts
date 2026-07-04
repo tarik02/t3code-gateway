@@ -10,20 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as EnvsIndexRouteImport } from './routes/envs/index'
-import { Route as EnvsNewRouteImport } from './routes/envs/new'
-import { Route as EnvsEnvironmentIdRouteImport } from './routes/envs/$environmentId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChangePasswordRoute = ChangePasswordRouteImport.update({
-  id: '/change-password',
-  path: '/change-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -31,81 +22,31 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EnvsIndexRoute = EnvsIndexRouteImport.update({
-  id: '/envs/',
-  path: '/envs/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EnvsNewRoute = EnvsNewRouteImport.update({
-  id: '/envs/new',
-  path: '/envs/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EnvsEnvironmentIdRoute = EnvsEnvironmentIdRouteImport.update({
-  id: '/envs/$environmentId',
-  path: '/envs/$environmentId',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
-  '/envs/$environmentId': typeof EnvsEnvironmentIdRoute
-  '/envs/new': typeof EnvsNewRoute
-  '/envs/': typeof EnvsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
-  '/envs/$environmentId': typeof EnvsEnvironmentIdRoute
-  '/envs/new': typeof EnvsNewRoute
-  '/envs': typeof EnvsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
-  '/envs/$environmentId': typeof EnvsEnvironmentIdRoute
-  '/envs/new': typeof EnvsNewRoute
-  '/envs/': typeof EnvsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/change-password'
-    | '/login'
-    | '/envs/$environmentId'
-    | '/envs/new'
-    | '/envs/'
+  fullPaths: '/' | '/login'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/change-password'
-    | '/login'
-    | '/envs/$environmentId'
-    | '/envs/new'
-    | '/envs'
-  id:
-    | '__root__'
-    | '/'
-    | '/change-password'
-    | '/login'
-    | '/envs/$environmentId'
-    | '/envs/new'
-    | '/envs/'
+  to: '/' | '/login'
+  id: '__root__' | '/' | '/login'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
-  EnvsEnvironmentIdRoute: typeof EnvsEnvironmentIdRoute
-  EnvsNewRoute: typeof EnvsNewRoute
-  EnvsIndexRoute: typeof EnvsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -117,13 +58,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/change-password': {
-      id: '/change-password'
-      path: '/change-password'
-      fullPath: '/change-password'
-      preLoaderRoute: typeof ChangePasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -131,37 +65,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/envs/': {
-      id: '/envs/'
-      path: '/envs'
-      fullPath: '/envs/'
-      preLoaderRoute: typeof EnvsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/envs/new': {
-      id: '/envs/new'
-      path: '/envs/new'
-      fullPath: '/envs/new'
-      preLoaderRoute: typeof EnvsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/envs/$environmentId': {
-      id: '/envs/$environmentId'
-      path: '/envs/$environmentId'
-      fullPath: '/envs/$environmentId'
-      preLoaderRoute: typeof EnvsEnvironmentIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
-  EnvsEnvironmentIdRoute: EnvsEnvironmentIdRoute,
-  EnvsNewRoute: EnvsNewRoute,
-  EnvsIndexRoute: EnvsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

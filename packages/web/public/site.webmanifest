@@ -1,0 +1,18 @@
+{
+  "name": "T3 Code Gateway",
+  "short_name": "T3 Gateway",
+  "description": "T3 Code Gateway admin console",
+  "start_url": "/admin/",
+  "scope": "/admin/",
+  "display": "standalone",
+  "background_color": "#161616",
+  "theme_color": "#161616",
+  "icons": [
+    {
+      "src": "/admin/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

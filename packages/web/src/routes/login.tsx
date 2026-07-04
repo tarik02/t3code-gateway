@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { Label } from "../components/ui/label.tsx";
+import { T3Logo } from "../components/logo.tsx";
 import { login } from "../lib/gateway-api.ts";
 
 export const Route = createFileRoute("/login")({
@@ -32,11 +33,9 @@ function LoginPage() {
     <main className="grid min-h-dvh place-items-center bg-background px-4 py-8 text-foreground">
       <section className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-2xl shadow-black/20">
         <div className="mb-5 flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-xl border border-border bg-primary text-sm font-semibold text-primary-foreground">
-            T3
-          </div>
+          <T3Logo className="h-3" />
           <div>
-            <h1 className="text-base font-semibold leading-5">t3code</h1>
+            <h1 className="text-base font-semibold leading-5">T3 Code Gateway</h1>
           </div>
         </div>
 

@@ -23,39 +23,16 @@ import { TraefikReconciler } from "../traefik/reconciler.ts";
 import { hashSessionToken } from "../auth/session.ts";
 import { readSessionToken } from "./cookies.ts";
 
-const withJson = <A>(body: A) => HttpServerResponse.json(body).pipe(Effect.orDie);
-
-const environmentFailure = (message: string) =>
-  withJson({ error: message }).pipe(
-    Effect.map((response) => HttpServerResponse.setStatus(response, 400)),
+const jsonError = (message: string, status: number) =>
+  HttpServerResponse.json({ error: message }).pipe(
+    Effect.orDie,
+    Effect.map((response) => HttpServerResponse.setStatus(response, status)),
   );
 
-const notFoundFailure = (message: string) =>
-  withJson({ error: message }).pipe(
-    Effect.map((response) => HttpServerResponse.setStatus(response, 404)),
-  );
-
-const internalFailure = (message: string) =>
-  withJson({ error: message }).pipe(
-    Effect.map((response) => HttpServerResponse.setStatus(response, 500)),
-  );
-
-const withEnvironmentErrors = <R>(
-  effect: Effect.Effect<
-    HttpServerResponse.HttpServerResponse,
-    EnvironmentFailure | DatabaseError,
-    R
-  >,
-) =>
-  effect.pipe(
-    Effect.catchTags({
-      EnvironmentFailure: (error) =>
-        error.message === "Environment not found"
-          ? notFoundFailure(error.message)
-          : environmentFailure(error.message),
-      DatabaseError: (error) => internalFailure(error.message),
-    }),
-  );
+const environmentRouteErrors = {
+  EnvironmentFailure: (error: EnvironmentFailure) => jsonError(error.message, error.status ?? 400),
+  DatabaseError: (error: DatabaseError) => jsonError(error.message, 500),
+};
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -66,8 +43,10 @@ export const layer = Layer.effectDiscard(
     yield* router.add("GET", "/api/gateway/environments", () =>
       Effect.gen(function* () {
         const items = yield* environments.list();
-        return yield* withJson(items satisfies ReadonlyArray<EnvironmentRecord>);
-      }).pipe(Effect.catchTag("DatabaseError", (error) => internalFailure(error.message))),
+        return yield* HttpServerResponse.json(
+          items satisfies ReadonlyArray<EnvironmentRecord>,
+        ).pipe(Effect.orDie);
+      }).pipe(Effect.catchTag("DatabaseError", (error) => jsonError(error.message, 500))),
     );
 
     yield* router.add("POST", "/api/gateway/t3code-catalog/sync", (request) =>
@@ -77,9 +56,7 @@ export const layer = Layer.effectDiscard(
         );
         const sessionToken = readSessionToken(request.cookies);
         if (sessionToken === undefined) {
-          return yield* withJson({ error: "Authentication required" }).pipe(
-            Effect.map((response) => HttpServerResponse.setStatus(response, 401)),
-          );
+          return yield* jsonError("Authentication required", 401);
         }
 
         const deviceId = yield* hashSessionToken(sessionToken);
@@ -87,157 +64,157 @@ export const layer = Layer.effectDiscard(
           deviceId,
           payload.installedGatewayEnvironmentIds,
         );
-        return yield* withJson(response satisfies CatalogSyncResponse);
-      }).pipe(Effect.catchTag("DatabaseError", (error) => internalFailure(error.message))),
+        return yield* HttpServerResponse.json(response satisfies CatalogSyncResponse).pipe(
+          Effect.orDie,
+        );
+      }).pipe(Effect.catchTag("DatabaseError", (error) => jsonError(error.message, 500))),
     );
 
     yield* router.add("POST", "/api/gateway/environments/validate", () =>
-      withEnvironmentErrors(
-        Effect.gen(function* () {
-          const payload = yield* HttpServerRequest.schemaBodyJson(EnvironmentInput).pipe(
-            Effect.orDie,
-          );
-          const result = yield* environments.validate(payload);
-          return yield* withJson(result satisfies ValidateEnvironmentResponse);
-        }),
-      ),
+      Effect.gen(function* () {
+        const payload = yield* HttpServerRequest.schemaBodyJson(EnvironmentInput).pipe(
+          Effect.orDie,
+        );
+        const result = yield* environments.validate(payload);
+        return yield* HttpServerResponse.json(result satisfies ValidateEnvironmentResponse).pipe(
+          Effect.orDie,
+        );
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add("POST", "/api/gateway/environments/:environmentId/validate", () =>
-      withEnvironmentErrors(
-        Effect.gen(function* () {
-          const params = yield* HttpRouter.params;
-          const environmentId = params.environmentId;
-          if (environmentId === undefined || environmentId.length === 0) {
-            return yield* environmentFailure("Environment ID is required");
-          }
+      Effect.gen(function* () {
+        const params = yield* HttpRouter.params;
+        const environmentId = params.environmentId;
+        if (environmentId === undefined || environmentId.length === 0) {
+          return yield* jsonError("Environment ID is required", 400);
+        }
 
-          const payload = yield* HttpServerRequest.schemaBodyJson(EnvironmentInput).pipe(
-            Effect.orDie,
-          );
-          const result = yield* environments.validateForEdit(environmentId, payload);
-          return yield* withJson(result satisfies ValidateEnvironmentResponse);
-        }),
-      ),
+        const payload = yield* HttpServerRequest.schemaBodyJson(EnvironmentInput).pipe(
+          Effect.orDie,
+        );
+        const result = yield* environments.validateForEdit(environmentId, payload);
+        return yield* HttpServerResponse.json(result satisfies ValidateEnvironmentResponse).pipe(
+          Effect.orDie,
+        );
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add("POST", "/api/gateway/environments", () =>
-      withEnvironmentErrors(
-        Effect.gen(function* () {
-          const payload = yield* HttpServerRequest.schemaBodyJson(EnvironmentInput).pipe(
-            Effect.orDie,
-          );
-          const created = yield* environments.create(payload);
-          yield* traefik.reconcile();
-          const response = yield* withJson(created satisfies EnvironmentRecord);
-          return HttpServerResponse.setStatus(response, 201);
-        }),
-      ),
+      Effect.gen(function* () {
+        const payload = yield* HttpServerRequest.schemaBodyJson(EnvironmentInput).pipe(
+          Effect.orDie,
+        );
+        const created = yield* environments.create(payload);
+        yield* traefik.reconcile();
+        const response = yield* HttpServerResponse.json(created satisfies EnvironmentRecord).pipe(
+          Effect.orDie,
+        );
+        return HttpServerResponse.setStatus(response, 201);
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add("GET", "/api/gateway/environments/:environmentId", () =>
-      withEnvironmentErrors(
-        Effect.gen(function* () {
-          const params = yield* HttpRouter.params;
-          const environmentId = params.environmentId;
-          if (environmentId === undefined || environmentId.length === 0) {
-            return yield* environmentFailure("Environment ID is required");
-          }
+      Effect.gen(function* () {
+        const params = yield* HttpRouter.params;
+        const environmentId = params.environmentId;
+        if (environmentId === undefined || environmentId.length === 0) {
+          return yield* jsonError("Environment ID is required", 400);
+        }
 
-          const record = yield* environments.get(environmentId);
-          return yield* withJson(record satisfies EnvironmentRecord);
-        }),
-      ),
+        const record = yield* environments.get(environmentId);
+        return yield* HttpServerResponse.json(record satisfies EnvironmentRecord).pipe(
+          Effect.orDie,
+        );
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add("PATCH", "/api/gateway/environments/:environmentId", () =>
-      withEnvironmentErrors(
-        Effect.gen(function* () {
-          const params = yield* HttpRouter.params;
-          const environmentId = params.environmentId;
-          if (environmentId === undefined || environmentId.length === 0) {
-            return yield* environmentFailure("Environment ID is required");
-          }
+      Effect.gen(function* () {
+        const params = yield* HttpRouter.params;
+        const environmentId = params.environmentId;
+        if (environmentId === undefined || environmentId.length === 0) {
+          return yield* jsonError("Environment ID is required", 400);
+        }
 
-          const payload = yield* HttpServerRequest.schemaBodyJson(UpdateEnvironmentRequest).pipe(
-            Effect.orDie,
-          );
-          const updated = yield* environments.update(environmentId, payload);
-          yield* traefik.reconcile();
-          return yield* withJson(updated satisfies EnvironmentRecord);
-        }),
-      ),
+        const payload = yield* HttpServerRequest.schemaBodyJson(UpdateEnvironmentRequest).pipe(
+          Effect.orDie,
+        );
+        const updated = yield* environments.update(environmentId, payload);
+        yield* traefik.reconcile();
+        return yield* HttpServerResponse.json(updated satisfies EnvironmentRecord).pipe(
+          Effect.orDie,
+        );
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add("DELETE", "/api/gateway/environments/:environmentId", () =>
-      withEnvironmentErrors(
-        Effect.gen(function* () {
-          const params = yield* HttpRouter.params;
-          const environmentId = params.environmentId;
-          if (environmentId === undefined || environmentId.length === 0) {
-            return yield* environmentFailure("Environment ID is required");
-          }
+      Effect.gen(function* () {
+        const params = yield* HttpRouter.params;
+        const environmentId = params.environmentId;
+        if (environmentId === undefined || environmentId.length === 0) {
+          return yield* jsonError("Environment ID is required", 400);
+        }
 
-          yield* environments.remove(environmentId);
-          yield* traefik.reconcile();
-          return HttpServerResponse.empty({ status: 204 });
-        }),
-      ),
+        yield* environments.remove(environmentId);
+        yield* traefik.reconcile();
+        return HttpServerResponse.empty({ status: 204 });
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add("GET", "/api/gateway/environments/:environmentId/clients", () =>
-      withEnvironmentErrors(
-        Effect.gen(function* () {
-          const params = yield* HttpRouter.params;
-          const environmentId = params.environmentId;
-          if (environmentId === undefined || environmentId.length === 0) {
-            return yield* environmentFailure("Environment ID is required");
-          }
+      Effect.gen(function* () {
+        const params = yield* HttpRouter.params;
+        const environmentId = params.environmentId;
+        if (environmentId === undefined || environmentId.length === 0) {
+          return yield* jsonError("Environment ID is required", 400);
+        }
 
-          const clients = yield* environments.listClients(environmentId);
-          return yield* withJson(clients satisfies ReadonlyArray<EnvironmentClientSession>);
-        }),
-      ),
+        const clients = yield* environments.listClients(environmentId);
+        return yield* HttpServerResponse.json(
+          clients satisfies ReadonlyArray<EnvironmentClientSession>,
+        ).pipe(Effect.orDie);
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add("POST", "/api/gateway/environments/:environmentId/pairing-link", () =>
-      withEnvironmentErrors(
-        Effect.gen(function* () {
-          const params = yield* HttpRouter.params;
-          const environmentId = params.environmentId;
-          if (environmentId === undefined || environmentId.length === 0) {
-            return yield* environmentFailure("Environment ID is required");
-          }
+      Effect.gen(function* () {
+        const params = yield* HttpRouter.params;
+        const environmentId = params.environmentId;
+        if (environmentId === undefined || environmentId.length === 0) {
+          return yield* jsonError("Environment ID is required", 400);
+        }
 
-          const payload = yield* HttpServerRequest.schemaBodyJson(
-            CreateEnvironmentPairingLinkRequest,
-          ).pipe(Effect.orDie);
-          const result = yield* environments.createPairingLink(environmentId, payload);
-          return yield* withJson(result satisfies EnvironmentPairingLink);
-        }),
-      ),
+        const payload = yield* HttpServerRequest.schemaBodyJson(
+          CreateEnvironmentPairingLinkRequest,
+        ).pipe(Effect.orDie);
+        const result = yield* environments.createPairingLink(environmentId, payload);
+        return yield* HttpServerResponse.json(result satisfies EnvironmentPairingLink).pipe(
+          Effect.orDie,
+        );
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add(
       "POST",
       "/api/gateway/environments/:environmentId/clients/:sessionId/revoke",
       () =>
-        withEnvironmentErrors(
-          Effect.gen(function* () {
-            const params = yield* HttpRouter.params;
-            const environmentId = params.environmentId;
-            const sessionId = params.sessionId;
-            if (environmentId === undefined || environmentId.length === 0) {
-              return yield* environmentFailure("Environment ID is required");
-            }
-            if (sessionId === undefined || sessionId.length === 0) {
-              return yield* environmentFailure("Client session ID is required");
-            }
+        Effect.gen(function* () {
+          const params = yield* HttpRouter.params;
+          const environmentId = params.environmentId;
+          const sessionId = params.sessionId;
+          if (environmentId === undefined || environmentId.length === 0) {
+            return yield* jsonError("Environment ID is required", 400);
+          }
+          if (sessionId === undefined || sessionId.length === 0) {
+            return yield* jsonError("Client session ID is required", 400);
+          }
 
-            const result = yield* environments.revokeClient(environmentId, sessionId);
-            return yield* withJson(result satisfies RevokeEnvironmentClientResponse);
-          }),
-        ),
+          const result = yield* environments.revokeClient(environmentId, sessionId);
+          return yield* HttpServerResponse.json(
+            result satisfies RevokeEnvironmentClientResponse,
+          ).pipe(Effect.orDie);
+        }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
   }),
 );
