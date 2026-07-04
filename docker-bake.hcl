@@ -19,12 +19,16 @@ target "external-traefik" {
   inherits = ["_common"]
   dockerfile = "Containerfile.external-traefik"
   tags = ["${EXTERNAL_TRAEFIK_IMAGE}:${VERSION}"]
+  cache-from = ["type=gha,scope=external-traefik"]
+  cache-to = ["type=gha,scope=external-traefik,mode=max"]
 }
 
 target "bundled-traefik" {
   inherits = ["_common"]
   dockerfile = "Containerfile.bundled-traefik"
   tags = ["${BUNDLED_TRAEFIK_IMAGE}:${VERSION}"]
+  cache-from = ["type=gha,scope=bundled-traefik"]
+  cache-to = ["type=gha,scope=bundled-traefik,mode=max"]
 }
 
 group "default" {
