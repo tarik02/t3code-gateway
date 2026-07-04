@@ -48,6 +48,9 @@ function Home() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm">
+          <Link className="underline" to="/envs">
+            Environments
+          </Link>
           <Link className="underline" to="/change-password">
             Change password
           </Link>

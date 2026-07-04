@@ -86,3 +86,73 @@ export const CatalogSyncResponse = Schema.Struct({
 });
 
 export type CatalogSyncResponse = typeof CatalogSyncResponse.Type;
+
+export const DEFAULT_BROWSER_TOKEN_SCOPES = [
+  "orchestration:read",
+  "orchestration:operate",
+  "terminal:operate",
+  "review:write",
+  "relay:read",
+] as const;
+
+export const EnvironmentInput = Schema.Struct({
+  slug: Schema.String,
+  label: Schema.String,
+  internalHttpBaseUrl: Schema.String,
+  internalWsBaseUrl: Schema.String,
+  adminBearerToken: Schema.String,
+  browserTokenScopes: Schema.optional(Schema.Array(Schema.String)),
+});
+
+export type EnvironmentInput = typeof EnvironmentInput.Type;
+
+export const UpdateEnvironmentRequest = Schema.Struct({
+  slug: Schema.optional(Schema.String),
+  label: Schema.optional(Schema.String),
+  internalHttpBaseUrl: Schema.optional(Schema.String),
+  internalWsBaseUrl: Schema.optional(Schema.String),
+  adminBearerToken: Schema.optional(Schema.String),
+  browserTokenScopes: Schema.optional(Schema.Array(Schema.String)),
+  enabled: Schema.optional(Schema.Boolean),
+});
+
+export type UpdateEnvironmentRequest = typeof UpdateEnvironmentRequest.Type;
+
+export const EnvironmentRecord = Schema.Struct({
+  environmentId: Schema.String,
+  slug: Schema.String,
+  label: Schema.String,
+  enabled: Schema.Boolean,
+  internalHttpBaseUrl: Schema.String,
+  internalWsBaseUrl: Schema.String,
+  publicHttpBaseUrl: Schema.String,
+  publicWsBaseUrl: Schema.String,
+  descriptor: Schema.optional(Schema.Unknown),
+  browserTokenScopes: Schema.Array(Schema.String),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  lastHealthStatus: Schema.optional(Schema.String),
+  lastHealthCheckedAt: Schema.optional(Schema.String),
+  lastHealthError: Schema.optional(Schema.String),
+  lastCatalogSyncStatus: Schema.optional(Schema.String),
+  lastCatalogSyncedAt: Schema.optional(Schema.String),
+  lastCatalogSyncError: Schema.optional(Schema.String),
+});
+
+export type EnvironmentRecord = typeof EnvironmentRecord.Type;
+
+export class EnvironmentFailure extends Schema.TaggedErrorClass<EnvironmentFailure>()(
+  "EnvironmentFailure",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export const ValidateEnvironmentResponse = Schema.Struct({
+  environmentId: Schema.String,
+  descriptor: Schema.Unknown,
+  publicHttpBaseUrl: Schema.String,
+  publicWsBaseUrl: Schema.String,
+});
+
+export type ValidateEnvironmentResponse = typeof ValidateEnvironmentResponse.Type;

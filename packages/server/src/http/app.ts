@@ -1,6 +1,7 @@
 import * as Http from "node:http";
 import { GatewayRpcs } from "@t3code-gateway/contracts/rpc";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -12,10 +13,13 @@ import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 
 import { AuthService } from "../auth/service.ts";
+import { layer as secretEncryptionLayer } from "../crypto/secret-encryption.ts";
 import { configLayer, GatewayRuntimeConfig } from "../config.ts";
+import { layer as environmentServiceLayer } from "../environments/service.ts";
 import { layer as gatewayDbLayer } from "../db/client.ts";
 import { ensureDatabaseDirectory, runMigrations } from "../db/migrate.ts";
 import { layer as authRoutesLayer } from "./auth-routes.ts";
+import { layer as environmentRoutesLayer } from "./environment-routes.ts";
 import { layer as gatewaySessionMiddlewareLayer } from "./gateway-session-middleware.ts";
 import { layer as rpcHandlersLayer } from "./rpc-handlers.ts";
 import { withSessionGuard } from "./session-guard.ts";
@@ -32,6 +36,15 @@ const dataLayer = gatewayDbLayer.pipe(Layer.provide(foundationLayer));
 
 const authLiveLayer = authLayer.pipe(Layer.provide(dataLayer), Layer.provide(foundationLayer));
 
+const secretLiveLayer = secretEncryptionLayer.pipe(Layer.provide(foundationLayer));
+
+const environmentLiveLayer = environmentServiceLayer.pipe(
+  Layer.provide(secretLiveLayer),
+  Layer.provide(NodeHttpClient.layerFetch),
+  Layer.provide(dataLayer),
+  Layer.provide(foundationLayer),
+);
+
 const bootstrapLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     yield* ensureDatabaseDirectory;
@@ -47,8 +60,9 @@ const gatewayRpcLayer = RpcServer.layerHttp({
   protocol: "http",
 }).pipe(Layer.provide(rpcHandlersLayer), Layer.provide(RpcSerialization.layerJson));
 
-const routesLayer = Layer.mergeAll(authRoutesLayer, gatewayRpcLayer).pipe(
+const routesLayer = Layer.mergeAll(authRoutesLayer, gatewayRpcLayer, environmentRoutesLayer).pipe(
   HttpRouter.provideRequest(configLayer),
+  Layer.provideMerge(environmentLiveLayer),
   Layer.provideMerge(authLiveLayer),
   Layer.provideMerge(dataLayer),
   Layer.provideMerge(foundationLayer),
@@ -96,5 +110,6 @@ export const runtimeLayer = serveLayer.pipe(
   Layer.provideMerge(foundationLayer),
   Layer.provideMerge(dataLayer),
   Layer.provideMerge(authLiveLayer),
+  Layer.provideMerge(environmentLiveLayer),
   Layer.provideMerge(gatewaySessionMiddlewareLayer),
 );
