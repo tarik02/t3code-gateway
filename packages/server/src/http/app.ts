@@ -122,9 +122,9 @@ const t3codeWebStaticLayer = Layer.unwrap(
 ).pipe(Layer.provide(foundationLayer));
 
 const gatewayAppLayer = HttpRouter.layer.pipe(
+  Layer.provideMerge(t3codeWebStaticLayer),
   Layer.provideMerge(routesLayer),
   Layer.provideMerge(adminStaticLayer),
-  Layer.provideMerge(t3codeWebStaticLayer),
   Layer.provideMerge(bootstrapLayer),
 );
 
