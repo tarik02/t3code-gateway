@@ -1,5 +1,6 @@
 {
   "name": "t3code-gateway",
+  "version": "0.1.0",
   "private": true,
   "workspaces": {
     "packages": [
@@ -27,6 +28,9 @@
   "scripts": {
     "prepare": "effect-tsgo patch",
     "build": "vp run -r build",
+    "package:runtime": "sh packaging/runtime/prepare.sh",
+    "changeset": "changeset",
+    "changeset:version": "changeset version && node packaging/scripts/sync-root-version.mjs",
     "typecheck": "vp run -r typecheck",
     "tc": "vp run -r typecheck",
     "lint": "vp lint --report-unused-disable-directives",
@@ -35,6 +39,7 @@
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist .vite-plus packages/*/.vite-plus *.tsbuildinfo packages/*/*.tsbuildinfo"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@effect/tsgo": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "7.0.0-dev.20260604.1",
