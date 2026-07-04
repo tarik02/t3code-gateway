@@ -1,0 +1,41 @@
+#!/command/with-contenv sh
+set -eu
+
+app_root="/opt/t3code-gateway"
+data_dir="${T3_GATEWAY_DATA_DIR:-/data}"
+traefik_dir="${data_dir}/traefik"
+
+mkdir -p "${data_dir}" "${traefik_dir}"
+
+if [ -z "${T3_GATEWAY_DATABASE_PATH+x}" ]; then
+  export T3_GATEWAY_DATABASE_PATH="${data_dir}/gateway.sqlite"
+fi
+
+if [ -z "${T3_GATEWAY_SECRET_KEY_FILE+x}" ]; then
+  export T3_GATEWAY_SECRET_KEY_FILE="${data_dir}/secret.key"
+fi
+
+if [ ! -f "${T3_GATEWAY_SECRET_KEY_FILE}" ]; then
+  umask 077
+  openssl rand 32 >"${T3_GATEWAY_SECRET_KEY_FILE}"
+fi
+
+if [ -z "${T3_GATEWAY_TRAEFIK_DYNAMIC_FILE+x}" ]; then
+  export T3_GATEWAY_TRAEFIK_DYNAMIC_FILE="${traefik_dir}/environments.yml"
+fi
+
+mkdir -p "$(dirname "${T3_GATEWAY_TRAEFIK_DYNAMIC_FILE}")"
+if [ ! -f "${T3_GATEWAY_TRAEFIK_DYNAMIC_FILE}" ]; then
+  printf "http:\n  routers: {}\n  services: {}\n" >"${T3_GATEWAY_TRAEFIK_DYNAMIC_FILE}"
+fi
+
+if [ -z "${T3_GATEWAY_ADMIN_STATIC_ROOT+x}" ]; then
+  export T3_GATEWAY_ADMIN_STATIC_ROOT="${app_root}/packages/web/dist/client"
+fi
+
+if [ -z "${T3_GATEWAY_T3CODE_WEB_STATIC_ROOT+x}" ] && [ -f "${app_root}/t3code-web-dist/index.html" ]; then
+  export T3_GATEWAY_T3CODE_WEB_STATIC_ROOT="${app_root}/t3code-web-dist"
+fi
+
+cd "${app_root}"
+exec node packages/server/src/main.ts

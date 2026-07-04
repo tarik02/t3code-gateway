@@ -1,0 +1,16 @@
+.git
+.runtime
+.vite-plus
+node_modules
+*.tsbuildinfo
+
+packages/*/node_modules
+packages/*/dist
+packages/*/.vite-plus
+packages/*/*.tsbuildinfo
+
+Containerfile*
+docker-bake.hcl
+
+!packaging/runtime/
+!packaging/runtime/**
