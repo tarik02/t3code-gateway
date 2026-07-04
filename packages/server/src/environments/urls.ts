@@ -55,16 +55,3 @@ export const isHttpOriginUrl = (url: string) => {
     return false;
   }
 };
-
-export const isAbsoluteWsUrl = (url: string) => {
-  try {
-    const parsed = new URL(url);
-    return (
-      (parsed.protocol === "ws:" || parsed.protocol === "wss:") &&
-      parsed.host.length > 0 &&
-      !urlHasUserinfo(parsed)
-    );
-  } catch {
-    return false;
-  }
-};

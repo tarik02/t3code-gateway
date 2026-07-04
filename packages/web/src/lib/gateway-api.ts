@@ -10,10 +10,14 @@ import type {
   LoginRequest,
   LoginResponse,
   RevokeEnvironmentClientResponse,
+  T3CodeCatalogEntryRequest,
+  T3CodeCatalogEntryResponse,
   TraefikConfigResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
 } from "@t3code-gateway/contracts/schemas";
+
+import { runGatewayRpc } from "./gateway-rpc.ts";
 
 const jsonHeaders = {
   "content-type": "application/json",
@@ -53,161 +57,90 @@ export async function logout(): Promise<void> {
 }
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const response = await fetch("/api/gateway/auth/me", {
-    credentials: "include",
-  });
-
-  return readJson<CurrentUser | null>(response);
+  return runGatewayRpc((client) => client["gateway.auth.me"](undefined));
 }
 
 export async function changePassword(payload: ChangePasswordRequest): Promise<void> {
-  const response = await fetch("/api/gateway/auth/change-password", {
-    method: "POST",
-    credentials: "include",
-    headers: jsonHeaders,
-    body: JSON.stringify(payload),
-  });
-
-  await readJson<void>(response);
+  await runGatewayRpc((client) => client["gateway.auth.changePassword"](payload));
 }
 
 export async function getGatewayStatus(): Promise<GatewayStatus> {
-  const response = await fetch("/api/gateway/status", {
-    credentials: "include",
-  });
-
-  return readJson<GatewayStatus>(response);
+  return runGatewayRpc((client) => client["gateway.status"](undefined));
 }
 
 export async function getTraefikConfig(): Promise<TraefikConfigResponse> {
-  const response = await fetch("/api/gateway/traefik/config", {
-    credentials: "include",
-  });
-
-  return readJson<TraefikConfigResponse>(response);
+  return runGatewayRpc((client) => client["gateway.traefik.config"](undefined));
 }
 
-export async function listEnvironments(): Promise<EnvironmentRecord[]> {
-  const response = await fetch("/api/gateway/environments", {
-    credentials: "include",
-  });
-
-  return readJson<EnvironmentRecord[]>(response);
+export async function listEnvironments(): Promise<ReadonlyArray<EnvironmentRecord>> {
+  return runGatewayRpc((client) => client["gateway.environments.list"](undefined));
 }
 
 export async function getEnvironment(environmentId: string): Promise<EnvironmentRecord> {
-  const response = await fetch(`/api/gateway/environments/${encodeURIComponent(environmentId)}`, {
-    credentials: "include",
-  });
-
-  return readJson<EnvironmentRecord>(response);
+  return runGatewayRpc((client) => client["gateway.environments.get"]({ environmentId }));
 }
 
 export async function validateEnvironment(
   payload: EnvironmentInput,
 ): Promise<ValidateEnvironmentResponse> {
-  const response = await fetch("/api/gateway/environments/validate", {
-    method: "POST",
-    credentials: "include",
-    headers: jsonHeaders,
-    body: JSON.stringify(payload),
-  });
-
-  return readJson<ValidateEnvironmentResponse>(response);
+  return runGatewayRpc((client) => client["gateway.environments.validate"](payload));
 }
 
 export async function validateEnvironmentForEdit(
   environmentId: string,
   payload: EnvironmentInput,
 ): Promise<ValidateEnvironmentResponse> {
-  const response = await fetch(
-    `/api/gateway/environments/${encodeURIComponent(environmentId)}/validate`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: jsonHeaders,
-      body: JSON.stringify(payload),
-    },
+  return runGatewayRpc((client) =>
+    client["gateway.environments.validateForEdit"]({ environmentId, input: payload }),
   );
-
-  return readJson<ValidateEnvironmentResponse>(response);
 }
 
 export async function createEnvironment(payload: EnvironmentInput): Promise<EnvironmentRecord> {
-  const response = await fetch("/api/gateway/environments", {
-    method: "POST",
-    credentials: "include",
-    headers: jsonHeaders,
-    body: JSON.stringify(payload),
-  });
-
-  return readJson<EnvironmentRecord>(response);
+  return runGatewayRpc((client) => client["gateway.environments.create"](payload));
 }
 
 export async function updateEnvironment(
   environmentId: string,
   payload: UpdateEnvironmentRequest,
 ): Promise<EnvironmentRecord> {
-  const response = await fetch(`/api/gateway/environments/${encodeURIComponent(environmentId)}`, {
-    method: "PATCH",
-    credentials: "include",
-    headers: jsonHeaders,
-    body: JSON.stringify(payload),
-  });
-
-  return readJson<EnvironmentRecord>(response);
+  return runGatewayRpc((client) =>
+    client["gateway.environments.update"]({ environmentId, input: payload }),
+  );
 }
 
 export async function deleteEnvironment(environmentId: string): Promise<void> {
-  const response = await fetch(`/api/gateway/environments/${encodeURIComponent(environmentId)}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-
-  await readJson<void>(response);
+  await runGatewayRpc((client) => client["gateway.environments.delete"]({ environmentId }));
 }
 
 export async function listEnvironmentClients(
   environmentId: string,
-): Promise<EnvironmentClientSession[]> {
-  const response = await fetch(
-    `/api/gateway/environments/${encodeURIComponent(environmentId)}/clients`,
-    {
-      credentials: "include",
-    },
-  );
-
-  return readJson<EnvironmentClientSession[]>(response);
+): Promise<ReadonlyArray<EnvironmentClientSession>> {
+  return runGatewayRpc((client) => client["gateway.environments.clients.list"]({ environmentId }));
 }
 
 export async function createEnvironmentPairingLink(
   environmentId: string,
   payload: CreateEnvironmentPairingLinkRequest,
 ): Promise<EnvironmentPairingLink> {
-  const response = await fetch(
-    `/api/gateway/environments/${encodeURIComponent(environmentId)}/pairing-link`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: jsonHeaders,
-      body: JSON.stringify(payload),
-    },
+  return runGatewayRpc((client) =>
+    client["gateway.environments.pairingLink"]({ environmentId, input: payload }),
   );
+}
 
-  return readJson<EnvironmentPairingLink>(response);
+export async function createT3CodeCatalogEntry(
+  environmentId: string,
+  payload: T3CodeCatalogEntryRequest,
+): Promise<T3CodeCatalogEntryResponse> {
+  return runGatewayRpc((client) =>
+    client["gateway.environments.t3codeCatalogEntry"]({ environmentId, input: payload }),
+  );
 }
 
 export async function revokeEnvironmentClient(
   environmentId: string,
   sessionId: string,
 ): Promise<RevokeEnvironmentClientResponse> {
-  const response = await fetch(
-    `/api/gateway/environments/${encodeURIComponent(environmentId)}/clients/${encodeURIComponent(sessionId)}/revoke`,
-    {
-      method: "POST",
-      credentials: "include",
-    },
+  return runGatewayRpc((client) =>
+    client["gateway.environments.clients.revoke"]({ environmentId, sessionId }),
   );
-
-  return readJson<RevokeEnvironmentClientResponse>(response);
 }

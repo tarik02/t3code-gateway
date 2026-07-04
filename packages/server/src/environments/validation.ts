@@ -15,26 +15,17 @@ import {
   readEnvironmentLabel,
   validateAdminBearerToken,
 } from "./t3code-client.ts";
-import {
-  computePublicUrls,
-  deriveWsBaseUrl,
-  hasUrlUserinfo,
-  isAbsoluteHttpUrl,
-  isHttpOriginUrl,
-  isAbsoluteWsUrl,
-} from "./urls.ts";
+import { computePublicUrls, hasUrlUserinfo, isAbsoluteHttpUrl, isHttpOriginUrl } from "./urls.ts";
 
 export interface ValidatedEnvironmentInput {
   readonly slug: string;
   readonly label: string;
-  readonly internalHttpBaseUrl: string;
-  readonly internalWsBaseUrl: string;
+  readonly endpoint: string;
   readonly adminBearerToken: string;
   readonly browserTokenScopes: ReadonlyArray<string>;
   readonly environmentId: string;
   readonly descriptor: unknown;
-  readonly publicHttpBaseUrl: string;
-  readonly publicWsBaseUrl: string;
+  readonly publicUrl: string;
 }
 
 export interface EnvironmentValidationContext {
@@ -70,44 +61,29 @@ export const validateEnvironmentInput = (
     const { environmentRepository, config, client } = context;
 
     const requestedEnvironmentId = input.environmentId ?? "";
-    const internalHttpBaseUrl = input.internalHttpBaseUrl;
-    const internalWsBaseUrl =
-      input.internalWsBaseUrl ??
-      (isAbsoluteHttpUrl(internalHttpBaseUrl) ? deriveWsBaseUrl(internalHttpBaseUrl) : "");
+    const endpoint = input.endpoint;
     const adminBearerToken = input.adminBearerToken ?? "";
     const pairingCode = input.pairingCode ?? "";
 
-    if (hasUrlUserinfo(internalHttpBaseUrl)) {
+    if (hasUrlUserinfo(endpoint)) {
       return yield* new EnvironmentFailure({
-        message: "Internal HTTP base URL must not include username or password",
+        message: "Endpoint must not include username or password",
       });
     }
 
-    if (!isAbsoluteHttpUrl(internalHttpBaseUrl)) {
+    if (!isAbsoluteHttpUrl(endpoint)) {
       return yield* new EnvironmentFailure({
-        message: "Internal HTTP base URL must be an absolute http or https URL",
+        message: "Endpoint must be an absolute http or https URL",
       });
     }
 
-    if (!isHttpOriginUrl(internalHttpBaseUrl)) {
+    if (!isHttpOriginUrl(endpoint)) {
       return yield* new EnvironmentFailure({
-        message: "Host must not include path, query, or fragment",
+        message: "Endpoint must not include path, query, or fragment",
       });
     }
 
-    if (hasUrlUserinfo(internalWsBaseUrl)) {
-      return yield* new EnvironmentFailure({
-        message: "Internal WebSocket base URL must not include username or password",
-      });
-    }
-
-    if (!isAbsoluteWsUrl(internalWsBaseUrl)) {
-      return yield* new EnvironmentFailure({
-        message: "Internal WebSocket base URL must be an absolute ws or wss URL",
-      });
-    }
-
-    const descriptor = yield* fetchEnvironmentDescriptor(client, internalHttpBaseUrl);
+    const descriptor = yield* fetchEnvironmentDescriptor(client, endpoint);
     const descriptorEnvironmentId = readEnvironmentId(descriptor);
     if (
       requestedEnvironmentId.length > 0 &&
@@ -163,14 +139,14 @@ export const validateEnvironmentInput = (
         : pairingCode.length > 0
           ? yield* exchangePairingCodeForBearerToken(
               client,
-              internalHttpBaseUrl,
+              endpoint,
               pairingCode,
               ADMIN_TOKEN_SCOPES,
             )
           : "";
 
     if (resolvedAdminBearerToken.length > 0) {
-      yield* validateAdminBearerToken(client, internalHttpBaseUrl, resolvedAdminBearerToken);
+      yield* validateAdminBearerToken(client, endpoint, resolvedAdminBearerToken);
     }
 
     const publicUrls = computePublicUrls(slug, config.publicBaseDomain);
@@ -178,13 +154,11 @@ export const validateEnvironmentInput = (
     return {
       slug,
       label,
-      internalHttpBaseUrl,
-      internalWsBaseUrl,
+      endpoint,
       adminBearerToken: resolvedAdminBearerToken,
       browserTokenScopes: resolveBrowserTokenScopes(input.browserTokenScopes),
       environmentId,
       descriptor,
-      publicHttpBaseUrl: publicUrls.publicHttpBaseUrl,
-      publicWsBaseUrl: publicUrls.publicWsBaseUrl,
+      publicUrl: publicUrls.publicHttpBaseUrl,
     } satisfies ValidatedEnvironmentInput;
   });

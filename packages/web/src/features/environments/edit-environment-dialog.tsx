@@ -22,15 +22,18 @@ export function EditEnvironmentDialog() {
   const environment = useEditEnvironmentDialogStore((state) => state.environment);
   const label = useEditEnvironmentDialogStore((state) => state.label);
   const slug = useEditEnvironmentDialogStore((state) => state.slug);
+  const endpoint = useEditEnvironmentDialogStore((state) => state.endpoint);
   const enabled = useEditEnvironmentDialogStore((state) => state.enabled);
   const error = useEditEnvironmentDialogStore((state) => state.error);
   const setOpen = useEditEnvironmentDialogStore((state) => state.setOpen);
   const setLabel = useEditEnvironmentDialogStore((state) => state.setLabel);
   const setSlug = useEditEnvironmentDialogStore((state) => state.setSlug);
+  const setEndpoint = useEditEnvironmentDialogStore((state) => state.setEndpoint);
   const setEnabled = useEditEnvironmentDialogStore((state) => state.setEnabled);
   const setError = useEditEnvironmentDialogStore((state) => state.setError);
   const reset = useEditEnvironmentDialogStore((state) => state.reset);
-  const canSubmit = environment !== null && label.length > 0 && slug.length > 0;
+  const canSubmit =
+    environment !== null && label.length > 0 && slug.length > 0 && endpoint.length > 0;
 
   const updateMutation = useMutation({
     mutationFn: (payload: Parameters<typeof updateEnvironment>[1]) => {
@@ -71,12 +74,18 @@ export function EditEnvironmentDialog() {
               if (!canSubmit) {
                 return;
               }
-              updateMutation.mutate({ slug, label, enabled });
+              updateMutation.mutate({ slug, label, endpoint, enabled });
             }}
           >
             <div className="flex flex-col gap-4">
               <Field label="Label" value={label} onChange={setLabel} />
               <Field label="Slug" value={slug} onChange={setSlug} />
+              <Field
+                label="Endpoint"
+                value={endpoint}
+                onChange={setEndpoint}
+                placeholder="https://backend.example.com"
+              />
               <label className="flex items-center justify-between gap-3 text-sm">
                 <span>Enabled</span>
                 <Switch checked={enabled} onCheckedChange={setEnabled} />

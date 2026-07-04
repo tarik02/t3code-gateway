@@ -11,7 +11,6 @@ const DatabaseOperation = Schema.Literals([
   "authSession",
   "authUser",
   "environment",
-  "deviceSession",
 ]);
 
 type DatabaseOperation = typeof DatabaseOperation.Type;
@@ -61,6 +60,9 @@ export const reasonFromPlatformError = (
   if (tag === "AlreadyExists") {
     return "alreadyExists";
   }
+  if (tag === "BadArgument") {
+    return "badArgument";
+  }
   if (tag === "BadResource") {
     return "badArgument";
   }
@@ -96,16 +98,14 @@ const reasonFromSqlError = (error: SqlError): DatabaseFailureReason => {
   return "query";
 };
 
-export const queryError = (operation: DatabaseOperation) => ({
-  EffectDrizzleQueryError: (error: EffectDrizzleQueryError) =>
-    Effect.fail(
-      new DatabaseError({
-        operation,
-        reason: "query",
-        cause: error,
-      }),
-    ),
-});
+export const queryError = (operation: DatabaseOperation, error: EffectDrizzleQueryError) =>
+  Effect.fail(
+    new DatabaseError({
+      operation,
+      reason: "query",
+      cause: error,
+    }),
+  );
 
 export const migrationError = {
   EffectDrizzleQueryError: (error: EffectDrizzleQueryError) =>

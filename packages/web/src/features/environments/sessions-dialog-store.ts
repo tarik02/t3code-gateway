@@ -1,7 +1,7 @@
 import type { EnvironmentRecord } from "@t3code-gateway/contracts/schemas";
 import { create } from "zustand";
 
-type SessionsDialogState = {
+interface SessionsDialogState {
   readonly open: boolean;
   readonly environment: EnvironmentRecord | null;
   readonly clientError: string | null;
@@ -11,7 +11,7 @@ type SessionsDialogState = {
   readonly setClientError: (clientError: string | null) => void;
   readonly setRevokingSessionId: (revokingSessionId: string | null) => void;
   readonly reset: () => void;
-};
+}
 
 export const useSessionsDialogStore = create<SessionsDialogState>((set) => ({
   open: false,

@@ -6,6 +6,7 @@ import { EnvironmentFailure } from "@t3code-gateway/contracts/schemas";
 import * as Effect from "effect/Effect";
 import * as HttpBody from "effect/unstable/http/HttpBody";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
+import type * as HttpClientError from "effect/unstable/http/HttpClientError";
 import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import * as Schema from "effect/Schema";
 
@@ -62,19 +63,58 @@ const T3PairingCredentialResult = Schema.Struct({
   credential: Schema.String,
 });
 
+const environmentHttpClientFailureMessage = (
+  action: string,
+  url: string,
+  error: HttpClientError.HttpClientError,
+) => {
+  switch (error.reason["_tag"]) {
+    case "DecodeError":
+      return `Could not ${action} at ${url}: response decoding failed`;
+    case "EmptyBodyError":
+      return `Could not ${action} at ${url}: response body was empty`;
+    case "EncodeError":
+      return `Could not ${action} at ${url}: request encoding failed`;
+    case "InvalidUrlError":
+      return `Could not ${action} at ${url}: invalid URL`;
+    case "StatusCodeError":
+      return `Could not ${action} at ${url}: unexpected HTTP status ${error.reason.response.status}`;
+    case "TransportError":
+      return `Could not ${action} at ${url}: transport failed`;
+  }
+};
+
+const responseBodyFailureMessage = (error: HttpClientError.HttpClientError) => {
+  switch (error.reason["_tag"]) {
+    case "DecodeError":
+      return "Failed to read response body: response decoding failed";
+    case "EmptyBodyError":
+      return "Failed to read response body: response body was empty";
+    case "EncodeError":
+      return "Failed to read response body: request encoding failed";
+    case "InvalidUrlError":
+      return "Failed to read response body: invalid URL";
+    case "StatusCodeError":
+      return `Failed to read response body: unexpected HTTP status ${error.reason.response.status}`;
+    case "TransportError":
+      return "Failed to read response body: transport failed";
+  }
+};
+
 const readJsonBody = (body: string) =>
   Schema.decodeUnknownEffect(Schema.UnknownFromJsonString)(body).pipe(
-    Effect.mapError(() => new EnvironmentFailure({ message: "Environment returned invalid JSON" })),
+    Effect.catchTags({
+      SchemaError: () =>
+        Effect.fail(new EnvironmentFailure({ message: "Environment returned invalid JSON" })),
+    }),
   );
 
 const readResponseText = (response: HttpClientResponse.HttpClientResponse) =>
   response.text.pipe(
-    Effect.mapError(
-      (error) =>
-        new EnvironmentFailure({
-          message: `Failed to read response body: ${error.message}`,
-        }),
-    ),
+    Effect.catchTags({
+      HttpClientError: (error) =>
+        Effect.fail(new EnvironmentFailure({ message: responseBodyFailureMessage(error) })),
+    }),
   );
 
 export const fetchEnvironmentDescriptor = (
@@ -84,12 +124,18 @@ export const fetchEnvironmentDescriptor = (
   Effect.gen(function* () {
     const url = joinBaseUrl(internalHttpBaseUrl, ENVIRONMENT_DESCRIPTOR_PATH);
     const response = yield* client.get(url).pipe(
-      Effect.mapError(
-        (error) =>
-          new EnvironmentFailure({
-            message: `Could not reach environment descriptor at ${url}: ${error.message}`,
-          }),
-      ),
+      Effect.catchTags({
+        HttpClientError: (error) =>
+          Effect.fail(
+            new EnvironmentFailure({
+              message: environmentHttpClientFailureMessage(
+                "reach environment descriptor",
+                url,
+                error,
+              ),
+            }),
+          ),
+      }),
     );
 
     if (response.status !== 200) {
@@ -116,12 +162,14 @@ export const validateAdminBearerToken = (
         },
       })
       .pipe(
-        Effect.mapError(
-          (error) =>
-            new EnvironmentFailure({
-              message: `Could not validate admin token at ${url}: ${error.message}`,
-            }),
-        ),
+        Effect.catchTags({
+          HttpClientError: (error) =>
+            Effect.fail(
+              new EnvironmentFailure({
+                message: environmentHttpClientFailureMessage("validate admin token", url, error),
+              }),
+            ),
+        }),
       );
 
     if (response.status === 401 || response.status === 403) {
@@ -174,12 +222,14 @@ export const exchangePairingCodeForBearerAccessToken = (
         ),
       })
       .pipe(
-        Effect.mapError(
-          (error) =>
-            new EnvironmentFailure({
-              message: `Could not exchange pairing code at ${url}: ${error.message}`,
-            }),
-        ),
+        Effect.catchTags({
+          HttpClientError: (error) =>
+            Effect.fail(
+              new EnvironmentFailure({
+                message: environmentHttpClientFailureMessage("exchange pairing code", url, error),
+              }),
+            ),
+        }),
       );
 
     if (response.status === 401 || response.status === 403) {
@@ -197,9 +247,12 @@ export const exchangePairingCodeForBearerAccessToken = (
     const body = yield* readResponseText(response);
     const parsed = yield* readJsonBody(body);
     const token = yield* Schema.decodeUnknownEffect(T3AccessTokenResult)(parsed).pipe(
-      Effect.mapError(
-        () => new EnvironmentFailure({ message: "Environment returned an invalid access token" }),
-      ),
+      Effect.catchTags({
+        SchemaError: () =>
+          Effect.fail(
+            new EnvironmentFailure({ message: "Environment returned an invalid access token" }),
+          ),
+      }),
     );
 
     if (token.token_type !== "Bearer") {
@@ -231,12 +284,18 @@ export const createPairingCredential = (
         body: HttpBody.jsonUnsafe(input),
       })
       .pipe(
-        Effect.mapError(
-          (error) =>
-            new EnvironmentFailure({
-              message: `Could not create pairing credential at ${url}: ${error.message}`,
-            }),
-        ),
+        Effect.catchTags({
+          HttpClientError: (error) =>
+            Effect.fail(
+              new EnvironmentFailure({
+                message: environmentHttpClientFailureMessage(
+                  "create pairing credential",
+                  url,
+                  error,
+                ),
+              }),
+            ),
+        }),
       );
 
     if (response.status === 401 || response.status === 403) {
@@ -254,12 +313,14 @@ export const createPairingCredential = (
     const body = yield* readResponseText(response);
     const parsed = yield* readJsonBody(body);
     const credential = yield* Schema.decodeUnknownEffect(T3PairingCredentialResult)(parsed).pipe(
-      Effect.mapError(
-        () =>
-          new EnvironmentFailure({
-            message: "Environment returned an invalid pairing credential",
-          }),
-      ),
+      Effect.catchTags({
+        SchemaError: () =>
+          Effect.fail(
+            new EnvironmentFailure({
+              message: "Environment returned an invalid pairing credential",
+            }),
+          ),
+      }),
     );
 
     return credential.credential;
@@ -305,16 +366,22 @@ const mapClientSession = (session: typeof T3ClientSession.Type): EnvironmentClie
 
 const decodeClientSessions = (body: unknown) =>
   Schema.decodeUnknownEffect(T3ClientSessionList)(body).pipe(
-    Effect.mapError(
-      () => new EnvironmentFailure({ message: "Environment returned invalid client sessions" }),
-    ),
+    Effect.catchTags({
+      SchemaError: () =>
+        Effect.fail(
+          new EnvironmentFailure({ message: "Environment returned invalid client sessions" }),
+        ),
+    }),
   );
 
 const decodeClientSessionRevokeResult = (body: unknown) =>
   Schema.decodeUnknownEffect(T3ClientSessionRevokeResult)(body).pipe(
-    Effect.mapError(
-      () => new EnvironmentFailure({ message: "Environment returned an invalid revoke response" }),
-    ),
+    Effect.catchTags({
+      SchemaError: () =>
+        Effect.fail(
+          new EnvironmentFailure({ message: "Environment returned an invalid revoke response" }),
+        ),
+    }),
   );
 
 export const listClientSessions = (
@@ -329,12 +396,14 @@ export const listClientSessions = (
         headers: bearerAuthHeaders(adminBearerToken),
       })
       .pipe(
-        Effect.mapError(
-          (error) =>
-            new EnvironmentFailure({
-              message: `Could not list client sessions at ${url}: ${error.message}`,
-            }),
-        ),
+        Effect.catchTags({
+          HttpClientError: (error) =>
+            Effect.fail(
+              new EnvironmentFailure({
+                message: environmentHttpClientFailureMessage("list client sessions", url, error),
+              }),
+            ),
+        }),
       );
 
     if (response.status === 401 || response.status === 403) {
@@ -372,12 +441,14 @@ export const revokeClientSession = (
         body: HttpBody.jsonUnsafe({ sessionId }),
       })
       .pipe(
-        Effect.mapError(
-          (error) =>
-            new EnvironmentFailure({
-              message: `Could not revoke client session at ${url}: ${error.message}`,
-            }),
-        ),
+        Effect.catchTags({
+          HttpClientError: (error) =>
+            Effect.fail(
+              new EnvironmentFailure({
+                message: environmentHttpClientFailureMessage("revoke client session", url, error),
+              }),
+            ),
+        }),
       );
 
     if (response.status === 401) {

@@ -1,32 +1,34 @@
 import type { EnvironmentRecord } from "@t3code-gateway/contracts/schemas";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CopyIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "../../components/ui/button.tsx";
+import { Input } from "../../components/ui/input.tsx";
+import { Label } from "../../components/ui/label.tsx";
 import { Popover, PopoverPopup, PopoverTrigger } from "../../components/ui/popover.tsx";
 import { Skeleton } from "../../components/ui/skeleton.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
+import { toastManager } from "../../components/ui/toast.tsx";
+import {
+  createT3CodeCatalogEntry,
+  deleteEnvironment,
+  updateEnvironment,
+} from "../../lib/gateway-api.ts";
+import { ENVIRONMENTS_QUERY_KEY } from "./query-keys.ts";
+import { useT3CodeCatalogPopoverStore } from "./t3code-catalog-popover-store.ts";
+import { useT3CodeCatalogStore } from "./t3code-catalog-store.ts";
 
 export function EnvironmentTable({
-  deletingEnvironmentId,
   environments,
-  isDeleting,
-  isUpdatingEnabled,
-  onDelete,
   onEdit,
   onPair,
   onSessions,
-  onToggleEnabled,
 }: Readonly<{
-  deletingEnvironmentId: string | null;
   environments: ReadonlyArray<EnvironmentRecord>;
-  isDeleting: boolean;
-  isUpdatingEnabled: boolean;
-  onDelete: (environment: EnvironmentRecord) => void;
   onEdit: (environment: EnvironmentRecord) => void;
   onPair: (environment: EnvironmentRecord) => void;
   onSessions: (environment: EnvironmentRecord) => void;
-  onToggleEnabled: (environment: EnvironmentRecord, enabled: boolean) => void;
 }>) {
   const [copiedUrlEnvironmentId, setCopiedUrlEnvironmentId] = useState<string | null>(null);
 
@@ -40,7 +42,7 @@ export function EnvironmentTable({
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-xs">
-      <table className="w-full min-w-[860px] table-fixed text-left text-xs">
+      <table className="w-full min-w-[980px] table-fixed text-left text-xs">
         <EnvironmentTableColumns />
         <thead className="border-b border-border bg-muted/40 text-muted-foreground">
           <tr>
@@ -60,17 +62,17 @@ export function EnvironmentTable({
                 <div className="flex min-w-0 items-center gap-1">
                   <a
                     className="min-w-0 [overflow-wrap:anywhere] text-primary hover:underline"
-                    href={environment.publicHttpBaseUrl}
+                    href={environment.publicUrl}
                     rel="noreferrer"
                     target="_blank"
                   >
-                    {environment.publicHttpBaseUrl}
+                    {environment.publicUrl}
                   </a>
                   <CopyUrlButton
                     copied={copiedUrlEnvironmentId === environment.environmentId}
                     label={environment.label}
                     onCopy={() => {
-                      void navigator.clipboard.writeText(environment.publicHttpBaseUrl);
+                      void navigator.clipboard.writeText(environment.publicUrl);
                       setCopiedUrlEnvironmentId(environment.environmentId);
                       window.setTimeout(() => setCopiedUrlEnvironmentId(null), 1200);
                     }}
@@ -78,14 +80,11 @@ export function EnvironmentTable({
                 </div>
               </td>
               <td className="px-2 py-3 text-center">
-                <Switch
-                  checked={environment.enabled}
-                  disabled={isUpdatingEnabled}
-                  onCheckedChange={(checked) => onToggleEnabled(environment, checked)}
-                />
+                <EnvironmentEnabledSwitch environment={environment} />
               </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
+                  <T3CodeCatalogButton environment={environment} />
                   <Button size="xs" variant="outline" onClick={() => onPair(environment)}>
                     Pair
                   </Button>
@@ -95,16 +94,7 @@ export function EnvironmentTable({
                   <Button size="xs" variant="outline" onClick={() => onEdit(environment)}>
                     Edit
                   </Button>
-                  <Button
-                    size="xs"
-                    variant="destructive-outline"
-                    disabled={isDeleting}
-                    onClick={() => onDelete(environment)}
-                  >
-                    {isDeleting && deletingEnvironmentId === environment.environmentId
-                      ? "Deleting..."
-                      : "Delete"}
-                  </Button>
+                  <DeleteEnvironmentButton environment={environment} />
                 </div>
               </td>
             </tr>
@@ -115,10 +105,78 @@ export function EnvironmentTable({
   );
 }
 
+const errorMessage = (cause: unknown, fallback: string) =>
+  cause instanceof Error ? cause.message : fallback;
+
+function EnvironmentEnabledSwitch({
+  environment,
+}: Readonly<{
+  environment: EnvironmentRecord;
+}>) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (enabled: boolean) => updateEnvironment(environment.environmentId, { enabled }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ENVIRONMENTS_QUERY_KEY });
+    },
+    onError: (cause) => {
+      toastManager.add({
+        type: "error",
+        title: "Update failed",
+        description: errorMessage(cause, "Could not update environment."),
+      });
+    },
+  });
+
+  return (
+    <Switch
+      checked={environment.enabled}
+      disabled={mutation.isPending}
+      onCheckedChange={(checked) => mutation.mutate(checked)}
+    />
+  );
+}
+
+function DeleteEnvironmentButton({
+  environment,
+}: Readonly<{
+  environment: EnvironmentRecord;
+}>) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => deleteEnvironment(environment.environmentId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ENVIRONMENTS_QUERY_KEY });
+    },
+    onError: (cause) => {
+      toastManager.add({
+        type: "error",
+        title: "Delete failed",
+        description: errorMessage(cause, "Could not delete environment."),
+      });
+    },
+  });
+
+  return (
+    <Button
+      size="xs"
+      variant="destructive-outline"
+      disabled={mutation.isPending}
+      onClick={() => {
+        if (window.confirm("Remove this environment?")) {
+          mutation.mutate();
+        }
+      }}
+    >
+      {mutation.isPending ? "Deleting..." : "Delete"}
+    </Button>
+  );
+}
+
 export function EnvironmentTableSkeleton() {
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
-      <table className="w-full min-w-[860px] table-fixed text-left text-xs">
+      <table className="w-full min-w-[980px] table-fixed text-left text-xs">
         <EnvironmentTableColumns />
         <thead className="border-b border-border bg-muted/40 text-muted-foreground">
           <tr>
@@ -146,6 +204,7 @@ export function EnvironmentTableSkeleton() {
               </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
+                  <Skeleton className="h-6 w-16 rounded-md" />
                   <Skeleton className="h-6 w-10 rounded-md" />
                   <Skeleton className="h-6 w-16 rounded-md" />
                   <Skeleton className="h-6 w-10 rounded-md" />
@@ -167,8 +226,142 @@ function EnvironmentTableColumns() {
       <col className="w-[13%]" />
       <col />
       <col className="w-18" />
-      <col className="w-64" />
+      <col className="w-80" />
     </colgroup>
+  );
+}
+
+function T3CodeCatalogButton({
+  environment,
+}: Readonly<{
+  environment: EnvironmentRecord;
+}>) {
+  const installedEnvironmentIds = useT3CodeCatalogStore((state) => state.installedEnvironmentIds);
+  const clientLabel = useT3CodeCatalogStore((state) => state.clientLabel);
+  const rememberClientLabel = useT3CodeCatalogStore((state) => state.rememberClientLabel);
+  const installEntry = useT3CodeCatalogStore((state) => state.installEntry);
+  const removeEnvironment = useT3CodeCatalogStore((state) => state.removeEnvironment);
+  const openEnvironmentId = useT3CodeCatalogPopoverStore((state) => state.openEnvironmentId);
+  const editingClientLabel = useT3CodeCatalogPopoverStore((state) => state.editingClientLabel);
+  const clientLabelInput = useT3CodeCatalogPopoverStore((state) => state.clientLabelInput);
+  const openFor = useT3CodeCatalogPopoverStore((state) => state.openFor);
+  const close = useT3CodeCatalogPopoverStore((state) => state.close);
+  const editClientLabel = useT3CodeCatalogPopoverStore((state) => state.editClientLabel);
+  const useRememberedClientLabel = useT3CodeCatalogPopoverStore(
+    (state) => state.useRememberedClientLabel,
+  );
+  const setClientLabelInput = useT3CodeCatalogPopoverStore((state) => state.setClientLabelInput);
+  const open = openEnvironmentId === environment.environmentId;
+  const installed = installedEnvironmentIds.has(environment.environmentId);
+  const installMutation = useMutation({
+    mutationFn: async (nextClientLabel: string) => {
+      const entry = await createT3CodeCatalogEntry(environment.environmentId, {
+        clientLabel: nextClientLabel,
+      });
+      await installEntry(entry);
+    },
+    onError: (cause) => {
+      toastManager.add({
+        type: "error",
+        title: "Add to web failed",
+        description: errorMessage(cause, "Could not add environment to web."),
+      });
+    },
+  });
+  const removeMutation = useMutation({
+    mutationFn: () => removeEnvironment(environment.environmentId),
+    onError: (cause) => {
+      toastManager.add({
+        type: "error",
+        title: "Remove from web failed",
+        description: errorMessage(cause, "Could not remove environment from web."),
+      });
+    },
+  });
+  const isPending = installMutation.isPending || removeMutation.isPending;
+
+  if (installed) {
+    return (
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={isPending}
+        onClick={() => removeMutation.mutate()}
+      >
+        {isPending ? "Removing..." : "Remove web"}
+      </Button>
+    );
+  }
+
+  const rememberAndInstall = (nextClientLabel: string) => {
+    rememberClientLabel(nextClientLabel);
+    installMutation.mutate(nextClientLabel);
+    close();
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          openFor({ environmentId: environment.environmentId, clientLabel });
+          return;
+        }
+        close();
+      }}
+    >
+      <PopoverTrigger render={<Button size="xs" variant="outline" disabled={isPending} />}>
+        {isPending ? "Adding..." : "Add web"}
+      </PopoverTrigger>
+      <PopoverPopup className="w-72" side="bottom" align="end">
+        {clientLabel !== null && !editingClientLabel ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-medium">Client label</p>
+              <p className="min-h-4 truncate text-xs text-muted-foreground">
+                {clientLabel.length > 0 ? clientLabel : "No label"}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="xs" variant="outline" onClick={editClientLabel}>
+                Change
+              </Button>
+              <Button size="xs" onClick={() => rememberAndInstall(clientLabel)}>
+                Add
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              rememberAndInstall(clientLabelInput);
+            }}
+          >
+            <div className="flex flex-col gap-1.5">
+              <Label>Client label</Label>
+              <Input
+                nativeInput
+                value={clientLabelInput}
+                placeholder={environment.label}
+                onChange={(event) => setClientLabelInput(event.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              {clientLabel !== null ? (
+                <Button size="xs" variant="outline" onClick={useRememberedClientLabel}>
+                  Back
+                </Button>
+              ) : null}
+              <Button size="xs" type="submit">
+                Add
+              </Button>
+            </div>
+          </form>
+        )}
+      </PopoverPopup>
+    </Popover>
   );
 }
 

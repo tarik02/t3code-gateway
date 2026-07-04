@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
-type QRCodeSvgProps = {
+interface QRCodeSvgProps {
   value: string;
   size?: number;
   level?: "L" | "M" | "Q" | "H";
@@ -10,7 +10,7 @@ type QRCodeSvgProps = {
   className?: string;
   foregroundColor?: string;
   backgroundColor?: string;
-};
+}
 
 export const QRCodeSvg = memo(function QRCodeSvg({
   value,

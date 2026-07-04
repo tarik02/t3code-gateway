@@ -80,7 +80,7 @@ export const make = Effect.gen(function* () {
     .get()
     .pipe(
       Effect.map((row) => row?.value ?? 0),
-      Effect.catchTags(queryError("bootstrapUser")),
+      Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("bootstrapUser", error) }),
     );
 
   const createUser = (input: CreateUserInput) =>
@@ -88,14 +88,22 @@ export const make = Effect.gen(function* () {
       .insert(users)
       .values(input)
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("bootstrapUser")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({
+          EffectDrizzleQueryError: (error) => queryError("bootstrapUser", error),
+        }),
+      );
 
   const createSession = (input: CreateSessionInput) =>
     db
       .insert(userSessions)
       .values(input)
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("authSession")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authSession", error) }),
+      );
 
   const findSessionUserByTokenHash = (sessionTokenHash: string) =>
     db
@@ -109,14 +117,19 @@ export const make = Effect.gen(function* () {
       .innerJoin(users, eq(userSessions.userId, users.id))
       .where(eq(userSessions.sessionTokenHash, sessionTokenHash))
       .get()
-      .pipe(Effect.catchTags(queryError("authSession")));
+      .pipe(
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authSession", error) }),
+      );
 
   const deleteSessionById = (sessionId: string) =>
     db
       .delete(userSessions)
       .where(eq(userSessions.id, sessionId))
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("authSession")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authSession", error) }),
+      );
 
   const findUserByUsername = (username: string) =>
     db
@@ -128,14 +141,19 @@ export const make = Effect.gen(function* () {
       .from(users)
       .where(eq(users.username, username))
       .get()
-      .pipe(Effect.catchTags(queryError("authUser")));
+      .pipe(
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authUser", error) }),
+      );
 
   const deleteSessionByTokenHash = (sessionTokenHash: string) =>
     db
       .delete(userSessions)
       .where(eq(userSessions.sessionTokenHash, sessionTokenHash))
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("authSession")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authSession", error) }),
+      );
 
   const findUserPasswordById = (userId: string) =>
     db
@@ -143,7 +161,9 @@ export const make = Effect.gen(function* () {
       .from(users)
       .where(eq(users.id, userId))
       .get()
-      .pipe(Effect.catchTags(queryError("authUser")));
+      .pipe(
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authUser", error) }),
+      );
 
   const updateUserPassword = (userId: string, passwordHash: string, timestamp: string) =>
     db
@@ -155,7 +175,10 @@ export const make = Effect.gen(function* () {
       })
       .where(eq(users.id, userId))
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("authUser")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authUser", error) }),
+      );
 
   const findSessionIdByTokenHash = (sessionTokenHash: string) =>
     db
@@ -165,7 +188,7 @@ export const make = Effect.gen(function* () {
       .get()
       .pipe(
         Effect.map((row) => row?.sessionId),
-        Effect.catchTags(queryError("authSession")),
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authSession", error) }),
       );
 
   const deleteOtherUserSessions = (userId: string, sessionId: string) =>
@@ -173,7 +196,10 @@ export const make = Effect.gen(function* () {
       .delete(userSessions)
       .where(and(eq(userSessions.userId, userId), ne(userSessions.id, sessionId)))
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("authSession")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("authSession", error) }),
+      );
 
   return AuthRepository.of({
     countUsers,

@@ -21,19 +21,19 @@ export function AddEnvironmentDialog() {
   const open = useAddEnvironmentDialogStore((state) => state.open);
   const label = useAddEnvironmentDialogStore((state) => state.label);
   const slug = useAddEnvironmentDialogStore((state) => state.slug);
-  const host = useAddEnvironmentDialogStore((state) => state.host);
+  const endpoint = useAddEnvironmentDialogStore((state) => state.endpoint);
   const pairingCode = useAddEnvironmentDialogStore((state) => state.pairingCode);
   const error = useAddEnvironmentDialogStore((state) => state.error);
   const setOpen = useAddEnvironmentDialogStore((state) => state.setOpen);
   const setLabel = useAddEnvironmentDialogStore((state) => state.setLabel);
   const setSlug = useAddEnvironmentDialogStore((state) => state.setSlug);
-  const setHost = useAddEnvironmentDialogStore((state) => state.setHost);
+  const setEndpoint = useAddEnvironmentDialogStore((state) => state.setEndpoint);
   const setPairingCode = useAddEnvironmentDialogStore((state) => state.setPairingCode);
   const setError = useAddEnvironmentDialogStore((state) => state.setError);
   const applyPairingFields = useAddEnvironmentDialogStore((state) => state.applyPairingFields);
   const reset = useAddEnvironmentDialogStore((state) => state.reset);
   const canSubmit =
-    label.length > 0 && slug.length > 0 && host.length > 0 && pairingCode.length > 0;
+    label.length > 0 && slug.length > 0 && endpoint.length > 0 && pairingCode.length > 0;
 
   const createMutation = useMutation({
     mutationFn: createEnvironment,
@@ -71,7 +71,7 @@ export function AddEnvironmentDialog() {
               createMutation.mutate({
                 slug,
                 label,
-                internalHttpBaseUrl: host,
+                endpoint,
                 pairingCode,
               });
             }}
@@ -80,9 +80,9 @@ export function AddEnvironmentDialog() {
               <Field label="Label" value={label} onChange={setLabel} placeholder="Desktop" />
               <Field label="Slug" value={slug} onChange={setSlug} placeholder="desktop" />
               <Field
-                label="Host"
-                value={host}
-                onChange={setHost}
+                label="Endpoint"
+                value={endpoint}
+                onChange={setEndpoint}
                 onPaste={applyPairingFields}
                 placeholder="https://backend.example.com"
               />

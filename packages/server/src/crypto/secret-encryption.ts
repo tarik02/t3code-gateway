@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { GatewayRuntimeConfig } from "../config.ts";
-import { GatewayCrypto, GatewayCryptoError } from "./gateway-crypto.ts";
+import { GatewayCrypto } from "./gateway-crypto.ts";
 
 const KEY_LENGTH = 32;
 const NONCE_LENGTH = 12;
@@ -69,15 +69,17 @@ const loadMasterKey = Effect.gen(function* () {
 
   const fs = yield* FileSystem.FileSystem;
   const keyBytes = yield* fs.readFile(keyFile).pipe(
-    Effect.mapError(
-      (error) =>
-        new SecretEncryptionError({
-          operation: "loadKey",
-          reason: "readKeyFile",
-          path: keyFile,
-          cause: error,
-        }),
-    ),
+    Effect.catchTags({
+      PlatformError: (error) =>
+        Effect.fail(
+          new SecretEncryptionError({
+            operation: "loadKey",
+            reason: "readKeyFile",
+            path: keyFile,
+            cause: error,
+          }),
+        ),
+    }),
   );
 
   if (keyBytes.length !== KEY_LENGTH) {
@@ -112,14 +114,16 @@ export const layer = Layer.effect(
           });
           return Buffer.concat([Buffer.from(nonce), Buffer.from(ciphertextWithTag)]);
         }).pipe(
-          Effect.mapError(
-            (error: GatewayCryptoError) =>
-              new SecretEncryptionError({
-                operation: "encrypt",
-                reason: "cipherFailed",
-                cause: error,
-              }),
-          ),
+          Effect.catchTags({
+            GatewayCryptoError: (error) =>
+              Effect.fail(
+                new SecretEncryptionError({
+                  operation: "encrypt",
+                  reason: "cipherFailed",
+                  cause: error,
+                }),
+              ),
+          }),
         ),
       decrypt: (ciphertext) =>
         Effect.gen(function* () {
@@ -140,14 +144,16 @@ export const layer = Layer.effect(
               ciphertextWithTag,
             })
             .pipe(
-              Effect.mapError(
-                (error: GatewayCryptoError) =>
-                  new SecretEncryptionError({
-                    operation: "decrypt",
-                    reason: "cipherFailed",
-                    cause: error,
-                  }),
-              ),
+              Effect.catchTags({
+                GatewayCryptoError: (error) =>
+                  Effect.fail(
+                    new SecretEncryptionError({
+                      operation: "decrypt",
+                      reason: "cipherFailed",
+                      cause: error,
+                    }),
+                  ),
+              }),
             );
           return textDecoder.decode(plaintext);
         }),

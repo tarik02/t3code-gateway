@@ -23,16 +23,17 @@ const ensureDatabaseDirectoryForPath = (databasePath: string) =>
     const databaseDirectory = path.dirname(databasePath);
 
     yield* fs.makeDirectory(databaseDirectory, { recursive: true }).pipe(
-      Effect.catchTag("PlatformError", (error) =>
-        Effect.fail(
-          new DatabaseError({
-            operation: "ensureDirectory",
-            reason: reasonFromPlatformError(error),
-            path: databaseDirectory,
-            cause: error,
-          }),
-        ),
-      ),
+      Effect.catchTags({
+        PlatformError: (error) =>
+          Effect.fail(
+            new DatabaseError({
+              operation: "ensureDirectory",
+              reason: reasonFromPlatformError(error),
+              path: databaseDirectory,
+              cause: error,
+            }),
+          ),
+      }),
     );
   });
 
