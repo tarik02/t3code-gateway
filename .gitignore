@@ -1,0 +1,9 @@
+node_modules
+dist
+.vite-plus
+*.tsbuildinfo
+
+packages/*/node_modules
+packages/*/dist
+packages/*/.vite-plus
+packages/*/*.tsbuildinfo

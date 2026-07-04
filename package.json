@@ -1,0 +1,68 @@
+{
+  "name": "t3code-gateway",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "packages/*"
+    ],
+    "catalog": {
+      "@effect/platform-node": "4.0.0-beta.78",
+      "@effect/tsgo": "0.13.2",
+      "@tanstack/react-query": "^5.90.12",
+      "@tanstack/react-router": "^1.160.2",
+      "@tanstack/react-start": "^1.160.2",
+      "@tanstack/router-plugin": "^1.161.0",
+      "@types/node": "24.12.4",
+      "@types/react": "~19.2.14",
+      "@types/react-dom": "~19.2.3",
+      "@vitejs/plugin-react": "^6.0.0",
+      "effect": "4.0.0-beta.78",
+      "typescript": "~6.0.3",
+      "vite": "npm:@voidzero-dev/vite-plus-core@0.2.1",
+      "vite-plus": "0.2.1",
+      "yaml": "^2.9.0"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "prepare": "effect-tsgo patch",
+    "build": "vp run -r build",
+    "typecheck": "vp run -r typecheck",
+    "tc": "vp run -r typecheck",
+    "lint": "vp lint --report-unused-disable-directives",
+    "fmt": "vp fmt",
+    "fmt:check": "vp fmt --check",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist .vite-plus packages/*/.vite-plus *.tsbuildinfo packages/*/*.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "catalog:",
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "7.0.0-dev.20260604.1",
+    "vite-plus": "catalog:"
+  },
+  "overrides": {
+    "@effect/platform-node": "catalog:",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "vite": "catalog:"
+  },
+  "engines": {
+    "node": "^24.13.1"
+  },
+  "packageManager": "pnpm@10.24.0",
+  "packageExtensions": {
+    "vite-plus@*": {
+      "dependencies": {
+        "vite": "catalog:"
+      }
+    }
+  },
+  "peerDependencyRules": {
+    "allowAny": [
+      "vite"
+    ],
+    "allowedVersions": {
+      "vite": "*"
+    }
+  }
+}
