@@ -156,6 +156,97 @@ There are two deployment modes:
 - External Traefik: Gateway writes the dynamic file, and your separately managed Traefik includes it.
 - Bundled Traefik: Gateway and Traefik run in one s6-based container.
 
+## Images
+
+External Traefik mode:
+
+```text
+ghcr.io/tarik02/t3code-gateway:<version>
+```
+
+Bundled Traefik mode:
+
+```text
+ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>
+```
+
+Tags are release versions. Example:
+
+```text
+ghcr.io/tarik02/t3code-gateway:0.1.0
+ghcr.io/tarik02/t3code-gateway/bundled-traefik:0.1.0
+```
+
+## External Traefik Usage
+
+Use this image when Traefik is deployed separately:
+
+```text
+ghcr.io/tarik02/t3code-gateway:<version>
+```
+
+Mount persistent data at `/data`. Configure your Traefik static config to include:
+
+```yaml
+providers:
+  file:
+    filename: "/data/traefik/environments.yml"
+    watch: true
+```
+
+Run the gateway with the same `/data/traefik/environments.yml` mounted so it can write environment routers:
+
+```sh
+docker run \
+  --name t3code-gateway \
+  --restart unless-stopped \
+  -p 8787:8787 \
+  -v t3code-gateway-data:/data \
+  -e T3_GATEWAY_PUBLIC_BASE_DOMAIN=code.example.com \
+  ghcr.io/tarik02/t3code-gateway:<version>
+```
+
+Put your existing reverse proxy in front of the gateway host and route:
+
+```text
+https://code.example.com/      -> gateway port 8787
+https://code.example.com/admin -> gateway port 8787
+```
+
+Environment hosts are routed by Traefik from the generated dynamic config:
+
+```text
+https://desktop.code.example.com -> configured desktop environment
+```
+
+## Bundled Traefik Usage
+
+Use this image when Gateway should run Traefik in the same container:
+
+```text
+ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>
+```
+
+Run it with ports `80`, `443`, and optionally `8787` exposed:
+
+```sh
+docker run \
+  --name t3code-gateway \
+  --restart unless-stopped \
+  -p 80:80 \
+  -p 443:443 \
+  -p 8787:8787 \
+  -v t3code-gateway-data:/data \
+  -e T3_GATEWAY_PUBLIC_BASE_DOMAIN=code.example.com \
+  ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>
+```
+
+The bundled Traefik config reads dynamic routers from:
+
+```text
+/data/traefik/environments.yml
+```
+
 ## Configuration
 
 | Variable                              | Default                                  | Description                                                     |
@@ -174,41 +265,6 @@ There are two deployment modes:
 | `T3_GATEWAY_T3CODE_WEB_STATIC_ROOT`   | unset                                    | Built T3 Code web dist served at `/`.                           |
 | `T3_GATEWAY_T3CODE_WEB_BUILD_ID`      | unset                                    | Optional build id exposed to browser catalog sync.              |
 
-## Local Development
+## License
 
-Install dependencies:
-
-```sh
-pnpm install
-```
-
-Run checks:
-
-```sh
-pnpm fmt
-pnpm typecheck
-pnpm lint
-pnpm build
-```
-
-## Releases
-
-The repo uses Changesets with one fixed version across all packages.
-
-Normal flow:
-
-1. Add a changeset for user-facing changes.
-2. Merge to `master`.
-3. The Changesets workflow opens a `version packages` PR.
-4. Merge that PR.
-5. The release workflow builds the app and publishes both container modes to GHCR.
-
-Container release images are built for:
-
-- `linux/amd64`
-- `linux/arm64`
-
-Image variants:
-
-- `external-traefik`
-- `bundled-traefik`
+MIT

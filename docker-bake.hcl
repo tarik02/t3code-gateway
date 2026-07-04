@@ -1,9 +1,13 @@
-variable "IMAGE" {
+variable "EXTERNAL_TRAEFIK_IMAGE" {
   default = "t3code-gateway"
 }
 
+variable "BUNDLED_TRAEFIK_IMAGE" {
+  default = "t3code-gateway/bundled-traefik"
+}
+
 variable "VERSION" {
-  default = "dev"
+  default = "0.0.0-dev"
 }
 
 target "_common" {
@@ -14,13 +18,13 @@ target "_common" {
 target "external-traefik" {
   inherits = ["_common"]
   dockerfile = "Containerfile.external-traefik"
-  tags = ["${IMAGE}:external-traefik-${VERSION}"]
+  tags = ["${EXTERNAL_TRAEFIK_IMAGE}:${VERSION}"]
 }
 
 target "bundled-traefik" {
   inherits = ["_common"]
   dockerfile = "Containerfile.bundled-traefik"
-  tags = ["${IMAGE}:bundled-traefik-${VERSION}"]
+  tags = ["${BUNDLED_TRAEFIK_IMAGE}:${VERSION}"]
 }
 
 group "default" {

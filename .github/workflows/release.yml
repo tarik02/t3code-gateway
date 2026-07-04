@@ -49,7 +49,8 @@ jobs:
 
       - uses: docker/bake-action@v6
         env:
-          IMAGE: ghcr.io/${{ github.repository }}
+          EXTERNAL_TRAEFIK_IMAGE: ghcr.io/${{ github.repository }}
+          BUNDLED_TRAEFIK_IMAGE: ghcr.io/${{ github.repository }}/bundled-traefik
           VERSION: ${{ steps.version.outputs.version }}
         with:
           files: docker-bake.hcl
