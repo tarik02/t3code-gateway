@@ -13,6 +13,17 @@ await (async () => {
   });
   const isRecord = (value) => typeof value === "object" && value !== null;
   const list = (value) => Array.isArray(value) ? value : [];
+  const parseCatalog = (value) => {
+    if (typeof value !== "string") {
+      return emptyCatalog();
+    }
+    try {
+      const parsed = JSON.parse(value);
+      return isRecord(parsed) ? parsed : emptyCatalog();
+    } catch {
+      return emptyCatalog();
+    }
+  };
   const connectionId = (environmentId) => gatewayPrefix + environmentId;
   const environmentIdFromConnectionId = (value) =>
     typeof value === "string" && value.startsWith(gatewayPrefix)
@@ -41,7 +52,7 @@ await (async () => {
   const writeCatalog = (database, catalog) =>
     new Promise((resolve, reject) => {
       const transaction = database.transaction(storeName, "readwrite");
-      transaction.objectStore(storeName).put(catalog, documentKey);
+      transaction.objectStore(storeName).put(JSON.stringify(catalog), documentKey);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
@@ -63,7 +74,7 @@ await (async () => {
   const database = await openDatabase();
   try {
     const rawCatalog = await readCatalog(database);
-    const catalog = isRecord(rawCatalog) ? rawCatalog : emptyCatalog();
+    const catalog = parseCatalog(rawCatalog);
     const targets = list(catalog.targets);
     const profiles = list(catalog.profiles);
     const credentials = list(catalog.credentials);
