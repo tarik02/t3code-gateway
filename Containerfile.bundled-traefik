@@ -14,18 +14,26 @@ RUN apt-get update \
 
 RUN set -eux; \
   case "${TARGETARCH}" in \
-    amd64) s6_arch="x86_64"; traefik_arch="amd64" ;; \
-    arm64) s6_arch="aarch64"; traefik_arch="arm64" ;; \
+    amd64) s6_arch="x86_64" ;; \
+    arm64) s6_arch="aarch64" ;; \
     *) echo "unsupported target architecture: ${TARGETARCH}" >&2; exit 1 ;; \
   esac; \
   curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" -o /tmp/s6-overlay-noarch.tar.xz; \
   curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz" -o /tmp/s6-overlay-arch.tar.xz; \
-  curl -fsSL "https://github.com/traefik/traefik/releases/download/v${TRAEFIK_VERSION}/traefik_v${TRAEFIK_VERSION}_linux_${traefik_arch}.tar.gz" -o /tmp/traefik.tar.gz; \
   tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz; \
   tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz; \
+  rm -f /tmp/s6-overlay-noarch.tar.xz /tmp/s6-overlay-arch.tar.xz
+
+RUN set -eux; \
+  case "${TARGETARCH}" in \
+    amd64) traefik_arch="amd64" ;; \
+    arm64) traefik_arch="arm64" ;; \
+    *) echo "unsupported target architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "https://github.com/traefik/traefik/releases/download/v${TRAEFIK_VERSION}/traefik_v${TRAEFIK_VERSION}_linux_${traefik_arch}.tar.gz" -o /tmp/traefik.tar.gz; \
   tar -C /usr/local/bin -xzf /tmp/traefik.tar.gz traefik; \
   chmod +x /usr/local/bin/traefik; \
-  rm -f /tmp/s6-overlay-noarch.tar.xz /tmp/s6-overlay-arch.tar.xz /tmp/traefik.tar.gz
+  rm -f /tmp/traefik.tar.gz
 
 WORKDIR /opt/t3code-gateway
 

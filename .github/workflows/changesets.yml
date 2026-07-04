@@ -29,7 +29,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - run: pnpm install --frozen-lockfile --prefer-offline
+      - run: pnpm fetch --frozen-lockfile --prefer-offline
+
+      - run: pnpm install --frozen-lockfile --offline
 
       - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
