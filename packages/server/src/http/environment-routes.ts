@@ -1,9 +1,13 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import {
+  CatalogSyncRequest,
+  CatalogSyncResponse,
+  CreateEnvironmentPairingLinkRequest,
   EnvironmentInput,
   EnvironmentRecord,
   EnvironmentClientSession,
+  EnvironmentPairingLink,
   RevokeEnvironmentClientResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
@@ -16,6 +20,8 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { DatabaseError } from "../environments/errors.ts";
 import { EnvironmentService } from "../environments/service.ts";
 import { TraefikReconciler } from "../traefik/reconciler.ts";
+import { hashSessionToken } from "../auth/session.ts";
+import { readSessionToken } from "./cookies.ts";
 
 const withJson = <A>(body: A) => HttpServerResponse.json(body).pipe(Effect.orDie);
 
@@ -61,6 +67,27 @@ export const layer = Layer.effectDiscard(
       Effect.gen(function* () {
         const items = yield* environments.list();
         return yield* withJson(items satisfies ReadonlyArray<EnvironmentRecord>);
+      }).pipe(Effect.catchTag("DatabaseError", (error) => internalFailure(error.message))),
+    );
+
+    yield* router.add("POST", "/api/gateway/t3code-catalog/sync", (request) =>
+      Effect.gen(function* () {
+        const payload = yield* HttpServerRequest.schemaBodyJson(CatalogSyncRequest).pipe(
+          Effect.orDie,
+        );
+        const sessionToken = readSessionToken(request.cookies);
+        if (sessionToken === undefined) {
+          return yield* withJson({ error: "Authentication required" }).pipe(
+            Effect.map((response) => HttpServerResponse.setStatus(response, 401)),
+          );
+        }
+
+        const deviceId = yield* hashSessionToken(sessionToken);
+        const response = yield* environments.syncCatalog(
+          deviceId,
+          payload.installedGatewayEnvironmentIds,
+        );
+        return yield* withJson(response satisfies CatalogSyncResponse);
       }).pipe(Effect.catchTag("DatabaseError", (error) => internalFailure(error.message))),
     );
 
@@ -169,6 +196,24 @@ export const layer = Layer.effectDiscard(
 
           const clients = yield* environments.listClients(environmentId);
           return yield* withJson(clients satisfies ReadonlyArray<EnvironmentClientSession>);
+        }),
+      ),
+    );
+
+    yield* router.add("POST", "/api/gateway/environments/:environmentId/pairing-link", () =>
+      withEnvironmentErrors(
+        Effect.gen(function* () {
+          const params = yield* HttpRouter.params;
+          const environmentId = params.environmentId;
+          if (environmentId === undefined || environmentId.length === 0) {
+            return yield* environmentFailure("Environment ID is required");
+          }
+
+          const payload = yield* HttpServerRequest.schemaBodyJson(
+            CreateEnvironmentPairingLinkRequest,
+          ).pipe(Effect.orDie);
+          const result = yield* environments.createPairingLink(environmentId, payload);
+          return yield* withJson(result satisfies EnvironmentPairingLink);
         }),
       ),
     );

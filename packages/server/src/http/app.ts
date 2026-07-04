@@ -22,6 +22,7 @@ import { layer as authRoutesLayer } from "./auth-routes.ts";
 import { layer as environmentRoutesLayer } from "./environment-routes.ts";
 import { layer as gatewaySessionMiddlewareLayer } from "./gateway-session-middleware.ts";
 import { layer as rpcHandlersLayer } from "./rpc-handlers.ts";
+import { layer as t3codeWebRoutesLayer } from "./t3code-web-routes.ts";
 import { layer as traefikRoutesLayer } from "./traefik-routes.ts";
 import { withSessionGuard } from "./session-guard.ts";
 import { layer as authLayer } from "../auth/service.ts";
@@ -73,6 +74,7 @@ const routesLayer = Layer.mergeAll(
   authRoutesLayer,
   gatewayRpcLayer,
   environmentRoutesLayer,
+  t3codeWebRoutesLayer,
   traefikRoutesLayer,
 ).pipe(
   HttpRouter.provideRequest(configLayer),
@@ -100,9 +102,27 @@ const adminStaticLayer = Layer.unwrap(
   }),
 ).pipe(Layer.provide(foundationLayer));
 
+const t3codeWebStaticLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const config = yield* GatewayRuntimeConfig;
+    const t3codeWebStaticRoot = Option.getOrNull(config.t3codeWebStaticRoot);
+    if (t3codeWebStaticRoot === null) {
+      return Layer.empty;
+    }
+
+    return HttpStaticServer.layer({
+      root: t3codeWebStaticRoot,
+      prefix: "/",
+      spa: true,
+      index: "index.html",
+    });
+  }),
+).pipe(Layer.provide(foundationLayer));
+
 const gatewayAppLayer = HttpRouter.layer.pipe(
   Layer.provideMerge(routesLayer),
   Layer.provideMerge(adminStaticLayer),
+  Layer.provideMerge(t3codeWebStaticLayer),
   Layer.provideMerge(bootstrapLayer),
 );
 

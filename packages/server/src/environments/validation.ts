@@ -11,16 +11,19 @@ import { DEFAULT_ENVIRONMENT_BROWSER_TOKEN_SCOPES } from "./constants.ts";
 import { DatabaseError } from "./errors.ts";
 import { isDnsSafeSlug } from "./slug.ts";
 import {
+  exchangePairingCodeForBearerToken,
   fetchEnvironmentDescriptor,
   readEnvironmentId,
+  readEnvironmentLabel,
   validateAdminBearerToken,
 } from "./t3code-client.ts";
 import {
   computePublicUrls,
+  deriveWsBaseUrl,
   hasUrlUserinfo,
   isAbsoluteHttpUrl,
+  isHttpOriginUrl,
   isAbsoluteWsUrl,
-  stripTrailingSlash,
 } from "./urls.ts";
 
 export interface ValidatedEnvironmentInput {
@@ -56,6 +59,19 @@ const resolveBrowserTokenScopes = (scopes: ReadonlyArray<string> | undefined) =>
     ? [...DEFAULT_ENVIRONMENT_BROWSER_TOKEN_SCOPES]
     : [...scopes];
 
+const environmentSlug = (environmentId: string) => `env-${environmentId.toLowerCase()}`;
+
+const ADMIN_TOKEN_SCOPES = [
+  "orchestration:read",
+  "orchestration:operate",
+  "terminal:operate",
+  "review:write",
+  "relay:read",
+  "access:read",
+  "access:write",
+  "relay:write",
+] as const;
+
 export const validateEnvironmentInput = (
   context: EnvironmentValidationContext,
   input: EnvironmentInput,
@@ -64,22 +80,13 @@ export const validateEnvironmentInput = (
   Effect.gen(function* () {
     const { db, config, client } = context;
 
-    const slug = input.slug.trim();
-    const label = input.label.trim();
-    const internalHttpBaseUrl = stripTrailingSlash(input.internalHttpBaseUrl.trim());
-    const internalWsBaseUrl = stripTrailingSlash(input.internalWsBaseUrl.trim());
-    const adminBearerToken = input.adminBearerToken.trim();
-
-    if (!isDnsSafeSlug(slug)) {
-      return yield* new EnvironmentFailure({
-        message:
-          "Slug must be DNS-safe: lowercase letters, digits, and hyphens, starting with a letter",
-      });
-    }
-
-    if (label.length === 0) {
-      return yield* new EnvironmentFailure({ message: "Label is required" });
-    }
+    const requestedEnvironmentId = input.environmentId ?? "";
+    const internalHttpBaseUrl = input.internalHttpBaseUrl;
+    const internalWsBaseUrl =
+      input.internalWsBaseUrl ??
+      (isAbsoluteHttpUrl(internalHttpBaseUrl) ? deriveWsBaseUrl(internalHttpBaseUrl) : "");
+    const adminBearerToken = input.adminBearerToken ?? "";
+    const pairingCode = input.pairingCode ?? "";
 
     if (hasUrlUserinfo(internalHttpBaseUrl)) {
       return yield* new EnvironmentFailure({
@@ -90,6 +97,12 @@ export const validateEnvironmentInput = (
     if (!isAbsoluteHttpUrl(internalHttpBaseUrl)) {
       return yield* new EnvironmentFailure({
         message: "Internal HTTP base URL must be an absolute http or https URL",
+      });
+    }
+
+    if (!isHttpOriginUrl(internalHttpBaseUrl)) {
+      return yield* new EnvironmentFailure({
+        message: "Host must not include path, query, or fragment",
       });
     }
 
@@ -105,8 +118,37 @@ export const validateEnvironmentInput = (
       });
     }
 
-    if (adminBearerToken.length === 0) {
-      return yield* new EnvironmentFailure({ message: "Admin bearer token is required" });
+    const descriptor = yield* fetchEnvironmentDescriptor(client, internalHttpBaseUrl);
+    const descriptorEnvironmentId = readEnvironmentId(descriptor);
+    if (
+      requestedEnvironmentId.length > 0 &&
+      descriptorEnvironmentId !== null &&
+      descriptorEnvironmentId !== requestedEnvironmentId
+    ) {
+      return yield* new EnvironmentFailure({
+        message: "Environment descriptor ID does not match",
+      });
+    }
+
+    const environmentId = descriptorEnvironmentId ?? requestedEnvironmentId;
+    if (environmentId.length === 0) {
+      return yield* new EnvironmentFailure({
+        message: "Environment descriptor is missing a valid environmentId",
+      });
+    }
+
+    const slug = input.slug ?? environmentSlug(environmentId);
+    const label = input.label ?? readEnvironmentLabel(descriptor) ?? environmentId;
+
+    if (!isDnsSafeSlug(slug)) {
+      return yield* new EnvironmentFailure({
+        message:
+          "Slug must be DNS-safe: lowercase letters, digits, and hyphens, starting with a letter",
+      });
+    }
+
+    if (label.length === 0) {
+      return yield* new EnvironmentFailure({ message: "Label is required" });
     }
 
     const slugConflict = yield* dbEffect(() =>
@@ -122,14 +164,6 @@ export const validateEnvironmentInput = (
       slugConflict.environmentId !== options?.excludeEnvironmentId
     ) {
       return yield* new EnvironmentFailure({ message: `Slug "${slug}" is already in use` });
-    }
-
-    const descriptor = yield* fetchEnvironmentDescriptor(client, internalHttpBaseUrl);
-    const environmentId = readEnvironmentId(descriptor);
-    if (environmentId === null) {
-      return yield* new EnvironmentFailure({
-        message: "Environment descriptor is missing a valid environmentId",
-      });
     }
 
     const environmentIdConflict = yield* dbEffect(() =>
@@ -153,7 +187,21 @@ export const validateEnvironmentInput = (
       });
     }
 
-    yield* validateAdminBearerToken(client, internalHttpBaseUrl, adminBearerToken);
+    const resolvedAdminBearerToken =
+      adminBearerToken.length > 0
+        ? adminBearerToken
+        : pairingCode.length > 0
+          ? yield* exchangePairingCodeForBearerToken(
+              client,
+              internalHttpBaseUrl,
+              pairingCode,
+              ADMIN_TOKEN_SCOPES,
+            )
+          : "";
+
+    if (resolvedAdminBearerToken.length > 0) {
+      yield* validateAdminBearerToken(client, internalHttpBaseUrl, resolvedAdminBearerToken);
+    }
 
     const publicUrls = computePublicUrls(slug, config.publicBaseDomain);
 
@@ -162,7 +210,7 @@ export const validateEnvironmentInput = (
       label,
       internalHttpBaseUrl,
       internalWsBaseUrl,
-      adminBearerToken,
+      adminBearerToken: resolvedAdminBearerToken,
       browserTokenScopes: resolveBrowserTokenScopes(input.browserTokenScopes),
       environmentId,
       descriptor,

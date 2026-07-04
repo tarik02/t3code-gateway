@@ -96,11 +96,13 @@ export const DEFAULT_BROWSER_TOKEN_SCOPES = [
 ] as const;
 
 export const EnvironmentInput = Schema.Struct({
-  slug: Schema.String,
-  label: Schema.String,
+  environmentId: Schema.optional(Schema.String),
+  slug: Schema.optional(Schema.String),
+  label: Schema.optional(Schema.String),
   internalHttpBaseUrl: Schema.String,
-  internalWsBaseUrl: Schema.String,
-  adminBearerToken: Schema.String,
+  internalWsBaseUrl: Schema.optional(Schema.String),
+  pairingCode: Schema.optional(Schema.String),
+  adminBearerToken: Schema.optional(Schema.String),
   browserTokenScopes: Schema.optional(Schema.Array(Schema.String)),
 });
 
@@ -140,6 +142,22 @@ export const EnvironmentRecord = Schema.Struct({
 });
 
 export type EnvironmentRecord = typeof EnvironmentRecord.Type;
+
+export const CreateEnvironmentPairingLinkRequest = Schema.Struct({
+  label: Schema.String,
+  scopes: Schema.Array(Schema.String),
+});
+
+export type CreateEnvironmentPairingLinkRequest = typeof CreateEnvironmentPairingLinkRequest.Type;
+
+export const EnvironmentPairingLink = Schema.Struct({
+  label: Schema.String,
+  scopes: Schema.Array(Schema.String),
+  pairingCode: Schema.String,
+  pairingUrl: Schema.String,
+});
+
+export type EnvironmentPairingLink = typeof EnvironmentPairingLink.Type;
 
 export class EnvironmentFailure extends Schema.TaggedErrorClass<EnvironmentFailure>()(
   "EnvironmentFailure",

@@ -1,5 +1,11 @@
 export const stripTrailingSlash = (url: string) => (url.endsWith("/") ? url.slice(0, -1) : url);
 
+export const deriveWsBaseUrl = (httpBaseUrl: string) => {
+  const parsed = new URL(httpBaseUrl);
+  parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+  return stripTrailingSlash(parsed.toString());
+};
+
 export const joinBaseUrl = (baseUrl: string, path: string) => {
   const base = stripTrailingSlash(baseUrl);
   const suffix = path.startsWith("/") ? path : `/${path}`;
@@ -36,6 +42,15 @@ export const isAbsoluteHttpUrl = (url: string) => {
       parsed.host.length > 0 &&
       !urlHasUserinfo(parsed)
     );
+  } catch {
+    return false;
+  }
+};
+
+export const isHttpOriginUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname === "/" && parsed.search.length === 0 && parsed.hash.length === 0;
   } catch {
     return false;
   }
