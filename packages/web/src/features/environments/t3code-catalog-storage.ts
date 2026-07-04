@@ -1,17 +1,33 @@
 import type { T3CodeCatalogEntryResponse } from "@t3code-gateway/contracts/schemas";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 const databaseName = "t3code:connection-runtime";
 const storeName = "catalog";
 const documentKey = "document";
 const gatewayPrefix = "gateway:";
 
-type CatalogDocument = {
-  readonly schemaVersion: 1;
-  readonly targets: ReadonlyArray<unknown>;
-  readonly profiles: ReadonlyArray<unknown>;
-  readonly credentials: ReadonlyArray<unknown>;
-  readonly remoteDpopTokens: ReadonlyArray<unknown>;
-};
+const CatalogDocumentSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  targets: Schema.Array(Schema.Unknown),
+  profiles: Schema.Array(Schema.Unknown),
+  credentials: Schema.Array(Schema.Unknown),
+  remoteDpopTokens: Schema.Array(Schema.Unknown),
+});
+
+type CatalogDocument = typeof CatalogDocumentSchema.Type;
+
+const CatalogConnectionEntry = Schema.Struct({
+  connectionId: Schema.String,
+  environmentId: Schema.optional(Schema.String),
+});
+
+type CatalogConnectionEntry = typeof CatalogConnectionEntry.Type;
+
+const decodeCatalogDocument = Schema.decodeUnknownSync(
+  Schema.fromJsonString(CatalogDocumentSchema),
+);
+const decodeCatalogConnectionEntry = Schema.decodeUnknownOption(CatalogConnectionEntry);
 
 const emptyCatalog = (): CatalogDocument => ({
   schemaVersion: 1,
@@ -21,30 +37,18 @@ const emptyCatalog = (): CatalogDocument => ({
   remoteDpopTokens: [],
 });
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-const list = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value) ? value : []);
-
-const hasConnectionId = (value: unknown): value is { readonly connectionId: string } =>
-  isRecord(value) && typeof value.connectionId === "string";
-
 const connectionId = (environmentId: string) => `${gatewayPrefix}${environmentId}`;
 
+const parseCatalogConnectionEntry = (value: unknown): CatalogConnectionEntry | null =>
+  Option.getOrNull(decodeCatalogConnectionEntry(value));
+
 const gatewayEnvironmentIdFromEntry = (entry: unknown) => {
-  if (
-    !isRecord(entry) ||
-    typeof entry.connectionId !== "string" ||
-    !entry.connectionId.startsWith(gatewayPrefix)
-  ) {
+  const parsed = parseCatalogConnectionEntry(entry);
+  if (parsed === null || !parsed.connectionId.startsWith(gatewayPrefix)) {
     return null;
   }
 
-  if (typeof entry.environmentId === "string") {
-    return entry.environmentId;
-  }
-
-  return entry.connectionId.slice(gatewayPrefix.length);
+  return parsed.environmentId ?? parsed.connectionId.slice(gatewayPrefix.length);
 };
 
 const parseCatalog = (value: unknown): CatalogDocument => {
@@ -53,18 +57,7 @@ const parseCatalog = (value: unknown): CatalogDocument => {
   }
 
   try {
-    const parsed: unknown = JSON.parse(value);
-    if (!isRecord(parsed)) {
-      return emptyCatalog();
-    }
-
-    return {
-      schemaVersion: 1,
-      targets: list(parsed.targets),
-      profiles: list(parsed.profiles),
-      credentials: list(parsed.credentials),
-      remoteDpopTokens: list(parsed.remoteDpopTokens),
-    };
+    return decodeCatalogDocument(value);
   } catch {
     return emptyCatalog();
   }
@@ -107,20 +100,22 @@ const upsertByConnectionId = (
 ): ReadonlyArray<unknown> => {
   const values = new Map<string, unknown>();
   for (const item of current) {
-    if (hasConnectionId(item)) {
-      values.set(item.connectionId, item);
+    const parsed = parseCatalogConnectionEntry(item);
+    if (parsed !== null) {
+      values.set(parsed.connectionId, item);
     }
   }
   for (const item of next) {
-    if (hasConnectionId(item)) {
-      values.set(item.connectionId, item);
+    const parsed = parseCatalogConnectionEntry(item);
+    if (parsed !== null) {
+      values.set(parsed.connectionId, item);
     }
   }
   return [...values.values()];
 };
 
 const removeByConnectionId = (items: ReadonlyArray<unknown>, removedConnectionId: string) =>
-  items.filter((item) => !hasConnectionId(item) || item.connectionId !== removedConnectionId);
+  items.filter((item) => parseCatalogConnectionEntry(item)?.connectionId !== removedConnectionId);
 
 export async function listInstalledT3CodeEnvironmentIds(): Promise<ReadonlySet<string>> {
   const database = await openDatabase();

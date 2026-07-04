@@ -1,7 +1,7 @@
 import type { EnvironmentRecord } from "@t3code-gateway/contracts/schemas";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CopyIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
@@ -9,12 +9,14 @@ import { Label } from "../../components/ui/label.tsx";
 import { Popover, PopoverPopup, PopoverTrigger } from "../../components/ui/popover.tsx";
 import { Skeleton } from "../../components/ui/skeleton.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
+import { toastManager } from "../../components/ui/toast.tsx";
 import {
   createT3CodeCatalogEntry,
   deleteEnvironment,
   updateEnvironment,
 } from "../../lib/gateway-api.ts";
 import { ENVIRONMENTS_QUERY_KEY } from "./query-keys.ts";
+import { useT3CodeCatalogPopoverStore } from "./t3code-catalog-popover-store.ts";
 import { useT3CodeCatalogStore } from "./t3code-catalog-store.ts";
 
 export function EnvironmentTable({
@@ -103,6 +105,9 @@ export function EnvironmentTable({
   );
 }
 
+const errorMessage = (cause: unknown, fallback: string) =>
+  cause instanceof Error ? cause.message : fallback;
+
 function EnvironmentEnabledSwitch({
   environment,
 }: Readonly<{
@@ -115,7 +120,11 @@ function EnvironmentEnabledSwitch({
       await queryClient.invalidateQueries({ queryKey: ENVIRONMENTS_QUERY_KEY });
     },
     onError: (cause) => {
-      window.alert(cause instanceof Error ? cause.message : "Update failed");
+      toastManager.add({
+        type: "error",
+        title: "Update failed",
+        description: errorMessage(cause, "Could not update environment."),
+      });
     },
   });
 
@@ -140,7 +149,11 @@ function DeleteEnvironmentButton({
       await queryClient.invalidateQueries({ queryKey: ENVIRONMENTS_QUERY_KEY });
     },
     onError: (cause) => {
-      window.alert(cause instanceof Error ? cause.message : "Delete failed");
+      toastManager.add({
+        type: "error",
+        title: "Delete failed",
+        description: errorMessage(cause, "Could not delete environment."),
+      });
     },
   });
 
@@ -228,9 +241,17 @@ function T3CodeCatalogButton({
   const rememberClientLabel = useT3CodeCatalogStore((state) => state.rememberClientLabel);
   const installEntry = useT3CodeCatalogStore((state) => state.installEntry);
   const removeEnvironment = useT3CodeCatalogStore((state) => state.removeEnvironment);
-  const [open, setOpen] = useState(false);
-  const [editingClientLabel, setEditingClientLabel] = useState(false);
-  const [clientLabelInput, setClientLabelInput] = useState(clientLabel ?? "");
+  const openEnvironmentId = useT3CodeCatalogPopoverStore((state) => state.openEnvironmentId);
+  const editingClientLabel = useT3CodeCatalogPopoverStore((state) => state.editingClientLabel);
+  const clientLabelInput = useT3CodeCatalogPopoverStore((state) => state.clientLabelInput);
+  const openFor = useT3CodeCatalogPopoverStore((state) => state.openFor);
+  const close = useT3CodeCatalogPopoverStore((state) => state.close);
+  const editClientLabel = useT3CodeCatalogPopoverStore((state) => state.editClientLabel);
+  const useRememberedClientLabel = useT3CodeCatalogPopoverStore(
+    (state) => state.useRememberedClientLabel,
+  );
+  const setClientLabelInput = useT3CodeCatalogPopoverStore((state) => state.setClientLabelInput);
+  const open = openEnvironmentId === environment.environmentId;
   const installed = installedEnvironmentIds.has(environment.environmentId);
   const installMutation = useMutation({
     mutationFn: async (nextClientLabel: string) => {
@@ -240,23 +261,24 @@ function T3CodeCatalogButton({
       await installEntry(entry);
     },
     onError: (cause) => {
-      window.alert(cause instanceof Error ? cause.message : "Add to web failed");
+      toastManager.add({
+        type: "error",
+        title: "Add to web failed",
+        description: errorMessage(cause, "Could not add environment to web."),
+      });
     },
   });
   const removeMutation = useMutation({
     mutationFn: () => removeEnvironment(environment.environmentId),
     onError: (cause) => {
-      window.alert(cause instanceof Error ? cause.message : "Remove from web failed");
+      toastManager.add({
+        type: "error",
+        title: "Remove from web failed",
+        description: errorMessage(cause, "Could not remove environment from web."),
+      });
     },
   });
   const isPending = installMutation.isPending || removeMutation.isPending;
-
-  useEffect(() => {
-    if (open) {
-      setClientLabelInput(clientLabel ?? "");
-      setEditingClientLabel(clientLabel === null);
-    }
-  }, [clientLabel, open]);
 
   if (installed) {
     return (
@@ -274,25 +296,34 @@ function T3CodeCatalogButton({
   const rememberAndInstall = (nextClientLabel: string) => {
     rememberClientLabel(nextClientLabel);
     installMutation.mutate(nextClientLabel);
-    setOpen(false);
+    close();
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          openFor({ environmentId: environment.environmentId, clientLabel });
+          return;
+        }
+        close();
+      }}
+    >
       <PopoverTrigger render={<Button size="xs" variant="outline" disabled={isPending} />}>
         {isPending ? "Adding..." : "Add web"}
       </PopoverTrigger>
       <PopoverPopup className="w-72" side="bottom" align="end">
         {clientLabel !== null && !editingClientLabel ? (
           <div className="flex flex-col gap-3">
-            <div className="space-y-1">
+            <div className="flex flex-col gap-1">
               <p className="text-xs font-medium">Client label</p>
               <p className="min-h-4 truncate text-xs text-muted-foreground">
                 {clientLabel.length > 0 ? clientLabel : "No label"}
               </p>
             </div>
             <div className="flex justify-end gap-2">
-              <Button size="xs" variant="outline" onClick={() => setEditingClientLabel(true)}>
+              <Button size="xs" variant="outline" onClick={editClientLabel}>
                 Change
               </Button>
               <Button size="xs" onClick={() => rememberAndInstall(clientLabel)}>
@@ -319,7 +350,7 @@ function T3CodeCatalogButton({
             </div>
             <div className="flex justify-end gap-2">
               {clientLabel !== null ? (
-                <Button size="xs" variant="outline" onClick={() => setEditingClientLabel(false)}>
+                <Button size="xs" variant="outline" onClick={useRememberedClientLabel}>
                   Back
                 </Button>
               ) : null}
