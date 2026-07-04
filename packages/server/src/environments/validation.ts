@@ -23,7 +23,6 @@ import {
   hasUrlUserinfo,
   isAbsoluteHttpUrl,
   isHttpOriginUrl,
-  isAbsoluteWsUrl,
 } from "./urls.ts";
 
 export interface ValidatedEnvironmentInput {
@@ -81,40 +80,28 @@ export const validateEnvironmentInput = (
     const { db, config, client } = context;
 
     const requestedEnvironmentId = input.environmentId ?? "";
-    const internalHttpBaseUrl = input.internalHttpBaseUrl;
-    const internalWsBaseUrl =
-      input.internalWsBaseUrl ??
-      (isAbsoluteHttpUrl(internalHttpBaseUrl) ? deriveWsBaseUrl(internalHttpBaseUrl) : "");
+    const internalHttpBaseUrl = input.endpoint;
+    const internalWsBaseUrl = isAbsoluteHttpUrl(internalHttpBaseUrl)
+      ? deriveWsBaseUrl(internalHttpBaseUrl)
+      : "";
     const adminBearerToken = input.adminBearerToken ?? "";
     const pairingCode = input.pairingCode ?? "";
 
     if (hasUrlUserinfo(internalHttpBaseUrl)) {
       return yield* new EnvironmentFailure({
-        message: "Internal HTTP base URL must not include username or password",
+        message: "Endpoint must not include username or password",
       });
     }
 
     if (!isAbsoluteHttpUrl(internalHttpBaseUrl)) {
       return yield* new EnvironmentFailure({
-        message: "Internal HTTP base URL must be an absolute http or https URL",
+        message: "Endpoint must be an absolute http or https URL",
       });
     }
 
     if (!isHttpOriginUrl(internalHttpBaseUrl)) {
       return yield* new EnvironmentFailure({
-        message: "Host must not include path, query, or fragment",
-      });
-    }
-
-    if (hasUrlUserinfo(internalWsBaseUrl)) {
-      return yield* new EnvironmentFailure({
-        message: "Internal WebSocket base URL must not include username or password",
-      });
-    }
-
-    if (!isAbsoluteWsUrl(internalWsBaseUrl)) {
-      return yield* new EnvironmentFailure({
-        message: "Internal WebSocket base URL must be an absolute ws or wss URL",
+        message: "Endpoint must not include path, query, or fragment",
       });
     }
 

@@ -10,6 +10,8 @@ import type {
   LoginRequest,
   LoginResponse,
   RevokeEnvironmentClientResponse,
+  T3CodeCatalogEntryRequest,
+  T3CodeCatalogEntryResponse,
   TraefikConfigResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
@@ -195,6 +197,23 @@ export async function createEnvironmentPairingLink(
   );
 
   return readJson<EnvironmentPairingLink>(response);
+}
+
+export async function createT3CodeCatalogEntry(
+  environmentId: string,
+  payload: T3CodeCatalogEntryRequest,
+): Promise<T3CodeCatalogEntryResponse> {
+  const response = await fetch(
+    `/api/gateway/environments/${encodeURIComponent(environmentId)}/t3code-catalog-entry`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return readJson<T3CodeCatalogEntryResponse>(response);
 }
 
 export async function revokeEnvironmentClient(

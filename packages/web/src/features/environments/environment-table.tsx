@@ -1,8 +1,10 @@
 import type { EnvironmentRecord } from "@t3code-gateway/contracts/schemas";
 import { CopyIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../../components/ui/button.tsx";
+import { Input } from "../../components/ui/input.tsx";
+import { Label } from "../../components/ui/label.tsx";
 import { Popover, PopoverPopup, PopoverTrigger } from "../../components/ui/popover.tsx";
 import { Skeleton } from "../../components/ui/skeleton.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
@@ -10,21 +12,35 @@ import { Switch } from "../../components/ui/switch.tsx";
 export function EnvironmentTable({
   deletingEnvironmentId,
   environments,
+  installedT3CodeEnvironmentIds,
   isDeleting,
+  t3CodeCatalogEnvironmentId,
+  t3CodeClientLabel,
   isUpdatingEnabled,
+  isUpdatingT3CodeCatalog,
   onDelete,
   onEdit,
+  onInstallInT3Code,
   onPair,
+  onRememberT3CodeClientLabel,
+  onRemoveFromT3Code,
   onSessions,
   onToggleEnabled,
 }: Readonly<{
   deletingEnvironmentId: string | null;
   environments: ReadonlyArray<EnvironmentRecord>;
+  installedT3CodeEnvironmentIds: ReadonlySet<string>;
   isDeleting: boolean;
+  t3CodeCatalogEnvironmentId: string | null;
+  t3CodeClientLabel: string | null;
   isUpdatingEnabled: boolean;
+  isUpdatingT3CodeCatalog: boolean;
   onDelete: (environment: EnvironmentRecord) => void;
   onEdit: (environment: EnvironmentRecord) => void;
+  onInstallInT3Code: (environment: EnvironmentRecord, clientLabel: string) => void;
   onPair: (environment: EnvironmentRecord) => void;
+  onRememberT3CodeClientLabel: (clientLabel: string) => void;
+  onRemoveFromT3Code: (environment: EnvironmentRecord) => void;
   onSessions: (environment: EnvironmentRecord) => void;
   onToggleEnabled: (environment: EnvironmentRecord, enabled: boolean) => void;
 }>) {
@@ -40,7 +56,7 @@ export function EnvironmentTable({
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-xs">
-      <table className="w-full min-w-[860px] table-fixed text-left text-xs">
+      <table className="w-full min-w-[980px] table-fixed text-left text-xs">
         <EnvironmentTableColumns />
         <thead className="border-b border-border bg-muted/40 text-muted-foreground">
           <tr>
@@ -86,6 +102,18 @@ export function EnvironmentTable({
               </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
+                  <T3CodeCatalogButton
+                    clientLabel={t3CodeClientLabel}
+                    environment={environment}
+                    installed={installedT3CodeEnvironmentIds.has(environment.environmentId)}
+                    isPending={
+                      isUpdatingT3CodeCatalog &&
+                      t3CodeCatalogEnvironmentId === environment.environmentId
+                    }
+                    onInstall={(clientLabel) => onInstallInT3Code(environment, clientLabel)}
+                    onRememberClientLabel={onRememberT3CodeClientLabel}
+                    onRemove={() => onRemoveFromT3Code(environment)}
+                  />
                   <Button size="xs" variant="outline" onClick={() => onPair(environment)}>
                     Pair
                   </Button>
@@ -118,7 +146,7 @@ export function EnvironmentTable({
 export function EnvironmentTableSkeleton() {
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
-      <table className="w-full min-w-[860px] table-fixed text-left text-xs">
+      <table className="w-full min-w-[980px] table-fixed text-left text-xs">
         <EnvironmentTableColumns />
         <thead className="border-b border-border bg-muted/40 text-muted-foreground">
           <tr>
@@ -146,6 +174,7 @@ export function EnvironmentTableSkeleton() {
               </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
+                  <Skeleton className="h-6 w-16 rounded-md" />
                   <Skeleton className="h-6 w-10 rounded-md" />
                   <Skeleton className="h-6 w-16 rounded-md" />
                   <Skeleton className="h-6 w-10 rounded-md" />
@@ -167,8 +196,107 @@ function EnvironmentTableColumns() {
       <col className="w-[13%]" />
       <col />
       <col className="w-18" />
-      <col className="w-64" />
+      <col className="w-80" />
     </colgroup>
+  );
+}
+
+function T3CodeCatalogButton({
+  clientLabel,
+  environment,
+  installed,
+  isPending,
+  onInstall,
+  onRememberClientLabel,
+  onRemove,
+}: Readonly<{
+  clientLabel: string | null;
+  environment: EnvironmentRecord;
+  installed: boolean;
+  isPending: boolean;
+  onInstall: (clientLabel: string) => void;
+  onRememberClientLabel: (clientLabel: string) => void;
+  onRemove: () => void;
+}>) {
+  const [open, setOpen] = useState(false);
+  const [editingClientLabel, setEditingClientLabel] = useState(false);
+  const [clientLabelInput, setClientLabelInput] = useState(clientLabel ?? "");
+
+  useEffect(() => {
+    if (open) {
+      setClientLabelInput(clientLabel ?? "");
+      setEditingClientLabel(clientLabel === null);
+    }
+  }, [clientLabel, open]);
+
+  if (installed) {
+    return (
+      <Button size="xs" variant="outline" disabled={isPending} onClick={onRemove}>
+        {isPending ? "Removing..." : "Remove web"}
+      </Button>
+    );
+  }
+
+  const rememberAndInstall = (nextClientLabel: string) => {
+    onRememberClientLabel(nextClientLabel);
+    onInstall(nextClientLabel);
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger render={<Button size="xs" variant="outline" disabled={isPending} />}>
+        {isPending ? "Adding..." : "Add web"}
+      </PopoverTrigger>
+      <PopoverPopup className="w-72" side="bottom" align="end">
+        {clientLabel !== null && !editingClientLabel ? (
+          <div className="flex flex-col gap-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium">Client label</p>
+              <p className="min-h-4 truncate text-xs text-muted-foreground">
+                {clientLabel.length > 0 ? clientLabel : "No label"}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="xs" variant="outline" onClick={() => setEditingClientLabel(true)}>
+                Change
+              </Button>
+              <Button size="xs" onClick={() => rememberAndInstall(clientLabel)}>
+                Add
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              rememberAndInstall(clientLabelInput);
+            }}
+          >
+            <div className="flex flex-col gap-1.5">
+              <Label>Client label</Label>
+              <Input
+                nativeInput
+                value={clientLabelInput}
+                placeholder={environment.label}
+                onChange={(event) => setClientLabelInput(event.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              {clientLabel !== null ? (
+                <Button size="xs" variant="outline" onClick={() => setEditingClientLabel(false)}>
+                  Back
+                </Button>
+              ) : null}
+              <Button size="xs" type="submit">
+                Add
+              </Button>
+            </div>
+          </form>
+        )}
+      </PopoverPopup>
+    </Popover>
   );
 }
 

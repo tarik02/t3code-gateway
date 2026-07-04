@@ -2,14 +2,7 @@ import * as Schema from "effect/Schema";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 
 import { GatewaySessionMiddleware } from "./gateway-session.ts";
-import {
-  AuthFailure,
-  CatalogSyncRequest,
-  CatalogSyncResponse,
-  ChangePasswordRequest,
-  CurrentUser,
-  GatewayStatus,
-} from "./schemas.ts";
+import { AuthFailure, ChangePasswordRequest, CurrentUser, GatewayStatus } from "./schemas.ts";
 
 export class GetCurrentUser extends Rpc.make("gateway.auth.me", {
   success: Schema.NullOr(CurrentUser),
@@ -24,14 +17,4 @@ export class GetGatewayStatus extends Rpc.make("gateway.status", {
   success: GatewayStatus,
 }).middleware(GatewaySessionMiddleware) {}
 
-export class SyncT3CodeCatalog extends Rpc.make("gateway.t3codeCatalog.sync", {
-  payload: CatalogSyncRequest,
-  success: CatalogSyncResponse,
-}).middleware(GatewaySessionMiddleware) {}
-
-export class GatewayRpcs extends RpcGroup.make(
-  GetCurrentUser,
-  ChangePassword,
-  GetGatewayStatus,
-  SyncT3CodeCatalog,
-) {}
+export class GatewayRpcs extends RpcGroup.make(GetCurrentUser, ChangePassword, GetGatewayStatus) {}

@@ -7,16 +7,6 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { GatewayRuntimeConfig } from "../config.ts";
-import { source as catalogBootstrapSource } from "./t3code-catalog-bootstrap.ts";
-
-const catalogBootstrapPath = "/__gateway/catalog-bootstrap.js";
-
-const patchIndexHtml = (html: string) =>
-  html.replace(
-    /<script type="module" crossorigin src="([^"]+)"><\/script>/,
-    (_match, src: string) =>
-      `<script type="module">\nawait import(${JSON.stringify(catalogBootstrapPath)});\nawait import(${JSON.stringify(src)});\n</script>`,
-  );
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -31,18 +21,10 @@ export const layer = Layer.effectDiscard(
     const path = yield* Path.Path;
     const indexPath = path.join(t3codeWebStaticRoot, "index.html");
 
-    yield* router.add("GET", catalogBootstrapPath, () =>
-      Effect.succeed(
-        HttpServerResponse.text(catalogBootstrapSource, {
-          contentType: "text/javascript; charset=utf-8",
-        }),
-      ),
-    );
-
     yield* router.add("GET", "/", () =>
       Effect.gen(function* () {
         const html = yield* fs.readFileString(indexPath);
-        return HttpServerResponse.text(patchIndexHtml(html), {
+        return HttpServerResponse.text(html, {
           contentType: "text/html; charset=utf-8",
         });
       }).pipe(

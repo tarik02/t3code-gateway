@@ -7,13 +7,13 @@ type AddEnvironmentDialogState = {
   readonly label: string;
   readonly slug: string;
   readonly slugTouched: boolean;
-  readonly host: string;
+  readonly endpoint: string;
   readonly pairingCode: string;
   readonly error: string | null;
   readonly setOpen: (open: boolean) => void;
   readonly setLabel: (label: string) => void;
   readonly setSlug: (slug: string) => void;
-  readonly setHost: (host: string) => void;
+  readonly setEndpoint: (endpoint: string) => void;
   readonly setPairingCode: (pairingCode: string) => void;
   readonly setError: (error: string | null) => void;
   readonly applyPairingFields: (value: string) => boolean;
@@ -25,7 +25,7 @@ const initialState = {
   label: "",
   slug: "",
   slugTouched: false,
-  host: "",
+  endpoint: "",
   pairingCode: "",
   error: null,
 };
@@ -39,13 +39,13 @@ export const useAddEnvironmentDialogStore = create<AddEnvironmentDialogState>((s
       slug: state.slugTouched ? state.slug : slugify(label),
     })),
   setSlug: (slug) => set({ slug, slugTouched: true }),
-  setHost: (host) => {
-    const parsed = parsePairingFields(host);
+  setEndpoint: (endpoint) => {
+    const parsed = parsePairingFields(endpoint);
     if (parsed !== null) {
-      set({ host: parsed.host, pairingCode: parsed.pairingCode });
+      set({ endpoint: parsed.endpoint, pairingCode: parsed.pairingCode });
       return;
     }
-    set({ host });
+    set({ endpoint });
   },
   setPairingCode: (pairingCode) => set({ pairingCode }),
   setError: (error) => set({ error }),
@@ -54,7 +54,7 @@ export const useAddEnvironmentDialogStore = create<AddEnvironmentDialogState>((s
     if (parsed === null) {
       return false;
     }
-    set({ host: parsed.host, pairingCode: parsed.pairingCode });
+    set({ endpoint: parsed.endpoint, pairingCode: parsed.pairingCode });
     return true;
   },
   reset: () => set({ ...initialState, open: get().open }),

@@ -1,6 +1,6 @@
 export function parsePairingFields(
   value: string,
-): { readonly host: string; readonly pairingCode: string } | null {
+): { readonly endpoint: string; readonly pairingCode: string } | null {
   try {
     const url = new URL(value);
     const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
@@ -11,10 +11,10 @@ export function parsePairingFields(
 
     const explicitHost = url.searchParams.get("host");
     if (explicitHost !== null && explicitHost.length > 0) {
-      return { host: new URL(explicitHost).origin, pairingCode };
+      return { endpoint: new URL(explicitHost).origin, pairingCode };
     }
 
-    return { host: url.origin, pairingCode };
+    return { endpoint: url.origin, pairingCode };
   } catch {
     return null;
   }

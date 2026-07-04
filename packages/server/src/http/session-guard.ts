@@ -13,6 +13,21 @@ const publicGatewayRoutes = new Set([
 
 const pathname = (url: string) => new URL(url, "http://gateway.local").pathname;
 
+const publicT3CodeAssetPaths = new Set([
+  "/favicon.ico",
+  "/favicon.svg",
+  "/manifest.webmanifest",
+  "/robots.txt",
+  "/site.webmanifest",
+]);
+
+const lastPathSegment = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+const isT3CodeAssetPath = (path: string) =>
+  path.startsWith("/assets/") ||
+  publicT3CodeAssetPaths.has(path) ||
+  (path !== "/index.html" && lastPathSegment(path).includes("."));
+
 const sessionRequiredFor = (request: HttpServerRequest.HttpServerRequest) => {
   const path = pathname(request.url);
 
@@ -36,7 +51,11 @@ const sessionRequiredFor = (request: HttpServerRequest.HttpServerRequest) => {
     return false;
   }
 
-  return path === "/admin" || path.startsWith("/admin/");
+  if (path === "/admin" || path.startsWith("/admin/")) {
+    return true;
+  }
+
+  return !isT3CodeAssetPath(path);
 };
 
 const unauthenticatedResponse = (
@@ -44,7 +63,7 @@ const unauthenticatedResponse = (
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> => {
   const path = pathname(request.url);
 
-  if (path === "/admin" || path.startsWith("/admin/")) {
+  if (path === "/admin" || path.startsWith("/admin/") || !path.startsWith("/api/")) {
     return Effect.succeed(HttpServerResponse.redirect("/admin/login", { status: 302 }));
   }
 

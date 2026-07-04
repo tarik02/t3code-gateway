@@ -1,11 +1,12 @@
 import type {
-  CatalogSyncResponse,
   CreateEnvironmentPairingLinkRequest,
   EnvironmentClientSession,
   EnvironmentInput,
   EnvironmentPairingLink,
   EnvironmentRecord,
   RevokeEnvironmentClientResponse,
+  T3CodeCatalogEntryRequest,
+  T3CodeCatalogEntryResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
 } from "@t3code-gateway/contracts/schemas";
@@ -69,14 +70,15 @@ export class EnvironmentService extends Context.Service<
       environmentId: string,
       input: CreateEnvironmentPairingLinkRequest,
     ) => Effect.Effect<EnvironmentPairingLink, EnvironmentFailure | DatabaseError>;
+    readonly createT3CodeCatalogEntry: (
+      deviceId: string,
+      environmentId: string,
+      input: T3CodeCatalogEntryRequest,
+    ) => Effect.Effect<T3CodeCatalogEntryResponse, EnvironmentFailure | DatabaseError>;
     readonly revokeClient: (
       environmentId: string,
       sessionId: string,
     ) => Effect.Effect<RevokeEnvironmentClientResponse, EnvironmentFailure | DatabaseError>;
-    readonly syncCatalog: (
-      deviceId: string,
-      installedGatewayEnvironmentIds: ReadonlyArray<string>,
-    ) => Effect.Effect<CatalogSyncResponse, DatabaseError>;
   }
 >()("@t3code-gateway/server/environments/service/EnvironmentService") {}
 
@@ -96,8 +98,7 @@ const rowToRecord = (row: EnvironmentRow): EnvironmentRecord => ({
   slug: row.slug,
   label: row.label,
   enabled: row.enabled,
-  internalHttpBaseUrl: row.internalHttpBaseUrl,
-  internalWsBaseUrl: row.internalWsBaseUrl,
+  endpoint: row.internalHttpBaseUrl,
   publicHttpBaseUrl: row.publicHttpBaseUrl,
   publicWsBaseUrl: row.publicWsBaseUrl,
   descriptor:
@@ -135,8 +136,6 @@ const gatewayConnectionId = (environmentId: string) => `gateway:${environmentId}
 
 const expiresAtFromNow = (expiresInSeconds: number) =>
   DateTime.formatIso(DateTime.add(DateTime.nowUnsafe(), { seconds: expiresInSeconds }));
-
-type CatalogCredential = CatalogSyncResponse["upsertCredentials"][number];
 
 const buildPairingUrl = (publicHttpBaseUrl: string, credential: string) => {
   const url = new URL(publicHttpBaseUrl);
@@ -230,8 +229,7 @@ const makeEnvironmentService = Effect.gen(function* () {
 
       const needsRevalidation =
         input.slug !== undefined ||
-        input.internalHttpBaseUrl !== undefined ||
-        input.internalWsBaseUrl !== undefined ||
+        input.endpoint !== undefined ||
         input.adminBearerToken !== undefined;
 
       let nextValues: {
@@ -261,8 +259,7 @@ const makeEnvironmentService = Effect.gen(function* () {
           {
             slug: input.slug ?? existing.slug,
             label: input.label ?? existing.label,
-            internalHttpBaseUrl: input.internalHttpBaseUrl ?? existing.internalHttpBaseUrl,
-            internalWsBaseUrl: input.internalWsBaseUrl ?? existing.internalWsBaseUrl,
+            endpoint: input.endpoint ?? existing.internalHttpBaseUrl,
             adminBearerToken: input.adminBearerToken ?? decryptedToken,
             browserTokenScopes:
               input.browserTokenScopes ?? decodeStringArrayJson(existing.browserTokenScopesJson),
@@ -460,6 +457,97 @@ const makeEnvironmentService = Effect.gen(function* () {
       } satisfies EnvironmentPairingLink;
     });
 
+  const createT3CodeCatalogEntry = (
+    deviceId: string,
+    environmentId: string,
+    input: T3CodeCatalogEntryRequest,
+  ) =>
+    Effect.gen(function* () {
+      const row = yield* loadEnvironmentRow(environmentId);
+
+      if (row === undefined) {
+        return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
+      }
+
+      if (!row.enabled) {
+        return yield* new EnvironmentFailure({ message: "Environment is disabled", status: 409 });
+      }
+
+      const scopes = decodeStringArrayJson(row.browserTokenScopesJson);
+      const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
+      if (adminBearerToken.length === 0) {
+        return yield* new EnvironmentFailure({ message: "Admin bearer token is required" });
+      }
+
+      const bearerToken = yield* createBearerTokenForClient(
+        client,
+        row.internalHttpBaseUrl,
+        adminBearerToken,
+        {
+          label:
+            input.clientLabel === undefined || input.clientLabel.length === 0
+              ? "gateway"
+              : input.clientLabel,
+          scopes,
+        },
+      );
+      const encryptedToken = yield* secrets
+        .encrypt(bearerToken.accessToken)
+        .pipe(Effect.mapError((error) => new DatabaseError({ message: error.message })));
+      const timestamp = nowIso();
+      const expiresAt = expiresAtFromNow(bearerToken.expiresInSeconds);
+
+      yield* dbEffect(() =>
+        db
+          .insert(deviceSessions)
+          .values({
+            id: `${deviceId}:${row.environmentId}`,
+            deviceId,
+            environmentId: row.environmentId,
+            bearerTokenEncrypted: encryptedToken,
+            scopesJson: encodeStringArrayJson(scopes),
+            expiresAt,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })
+          .onConflictDoUpdate({
+            target: [deviceSessions.deviceId, deviceSessions.environmentId],
+            set: {
+              bearerTokenEncrypted: encryptedToken,
+              scopesJson: encodeStringArrayJson(scopes),
+              expiresAt,
+              updatedAt: timestamp,
+            },
+          })
+          .run(),
+      );
+
+      return {
+        schemaVersion: 1 as const,
+        target: {
+          _tag: "BearerConnectionTarget" as const,
+          environmentId: row.environmentId,
+          label: row.label,
+          connectionId: gatewayConnectionId(row.environmentId),
+        },
+        profile: {
+          _tag: "BearerConnectionProfile" as const,
+          connectionId: gatewayConnectionId(row.environmentId),
+          environmentId: row.environmentId,
+          label: row.label,
+          httpBaseUrl: row.publicHttpBaseUrl,
+          wsBaseUrl: row.publicWsBaseUrl,
+        },
+        credential: {
+          connectionId: gatewayConnectionId(row.environmentId),
+          credential: {
+            _tag: "BearerConnectionCredential" as const,
+            token: bearerToken.accessToken,
+          },
+        },
+      } satisfies T3CodeCatalogEntryResponse;
+    });
+
   const revokeClient = (environmentId: string, sessionId: string) =>
     Effect.gen(function* () {
       const trimmedSessionId = sessionId.trim();
@@ -500,100 +588,6 @@ const makeEnvironmentService = Effect.gen(function* () {
       return result;
     });
 
-  const syncCatalog = (deviceId: string, installedGatewayEnvironmentIds: ReadonlyArray<string>) =>
-    Effect.gen(function* () {
-      const installedEnvironmentIds = new Set(installedGatewayEnvironmentIds);
-      const rows = yield* dbEffect(() => db.select().from(environments).all());
-      const enabledRows = rows.filter((row) => row.enabled);
-      const enabledEnvironmentIds = new Set(enabledRows.map((row) => row.environmentId));
-
-      const upsertCredentials = yield* Effect.forEach(
-        enabledRows.filter((row) => !installedEnvironmentIds.has(row.environmentId)),
-        (row): Effect.Effect<CatalogCredential | null, never> =>
-          Effect.gen(function* () {
-            const scopes = decodeStringArrayJson(row.browserTokenScopesJson);
-            const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
-            const bearerToken = yield* createBearerTokenForClient(
-              client,
-              row.internalHttpBaseUrl,
-              adminBearerToken,
-              { label: "gateway", scopes },
-            );
-            const encryptedToken = yield* secrets
-              .encrypt(bearerToken.accessToken)
-              .pipe(Effect.mapError((error) => new DatabaseError({ message: error.message })));
-            const timestamp = nowIso();
-            const expiresAt = expiresAtFromNow(bearerToken.expiresInSeconds);
-
-            yield* dbEffect(() =>
-              db
-                .insert(deviceSessions)
-                .values({
-                  id: `${deviceId}:${row.environmentId}`,
-                  deviceId,
-                  environmentId: row.environmentId,
-                  bearerTokenEncrypted: encryptedToken,
-                  scopesJson: encodeStringArrayJson(scopes),
-                  expiresAt,
-                  createdAt: timestamp,
-                  updatedAt: timestamp,
-                })
-                .onConflictDoUpdate({
-                  target: [deviceSessions.deviceId, deviceSessions.environmentId],
-                  set: {
-                    bearerTokenEncrypted: encryptedToken,
-                    scopesJson: encodeStringArrayJson(scopes),
-                    expiresAt,
-                    updatedAt: timestamp,
-                  },
-                })
-                .run(),
-            );
-
-            return {
-              connectionId: gatewayConnectionId(row.environmentId),
-              credential: {
-                _tag: "BearerConnectionCredential",
-                token: bearerToken.accessToken,
-              },
-            } satisfies CatalogCredential;
-          }).pipe(
-            Effect.catch((error: EnvironmentFailure | DatabaseError) =>
-              Effect.logError("gateway.catalogSync.environment.failed", {
-                environmentId: row.environmentId,
-                message: error.message,
-              }).pipe(Effect.as(null)),
-            ),
-          ),
-      ).pipe(
-        Effect.map((credentials) =>
-          credentials.filter((credential): credential is CatalogCredential => credential !== null),
-        ),
-      );
-
-      return {
-        schemaVersion: 1 as const,
-        upsertTargets: enabledRows.map((row) => ({
-          _tag: "BearerConnectionTarget" as const,
-          environmentId: row.environmentId,
-          label: row.label,
-          connectionId: gatewayConnectionId(row.environmentId),
-        })),
-        upsertProfiles: enabledRows.map((row) => ({
-          _tag: "BearerConnectionProfile" as const,
-          connectionId: gatewayConnectionId(row.environmentId),
-          environmentId: row.environmentId,
-          label: row.label,
-          httpBaseUrl: row.publicHttpBaseUrl,
-          wsBaseUrl: row.publicWsBaseUrl,
-        })),
-        upsertCredentials,
-        removeEnvironmentIds: installedGatewayEnvironmentIds.filter(
-          (environmentId) => !enabledEnvironmentIds.has(environmentId),
-        ),
-      } satisfies CatalogSyncResponse;
-    });
-
   return EnvironmentService.of({
     list,
     get,
@@ -604,8 +598,8 @@ const makeEnvironmentService = Effect.gen(function* () {
     validateForEdit,
     listClients,
     createPairingLink,
+    createT3CodeCatalogEntry,
     revokeClient,
-    syncCatalog,
   });
 });
 

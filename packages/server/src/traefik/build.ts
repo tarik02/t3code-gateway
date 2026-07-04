@@ -70,7 +70,7 @@ export const buildTraefikDynamicConfig = (
     services[name] = {
       loadBalancer: {
         passHostHeader: true,
-        servers: [{ url: stripTrailingSlash(environment.internalHttpBaseUrl) }],
+        servers: [{ url: stripTrailingSlash(environment.endpoint) }],
       },
     };
   }

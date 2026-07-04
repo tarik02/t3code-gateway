@@ -1,14 +1,14 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import {
-  CatalogSyncRequest,
-  CatalogSyncResponse,
   CreateEnvironmentPairingLinkRequest,
   EnvironmentInput,
   EnvironmentRecord,
   EnvironmentClientSession,
   EnvironmentPairingLink,
   RevokeEnvironmentClientResponse,
+  T3CodeCatalogEntryRequest,
+  T3CodeCatalogEntryResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
 } from "@t3code-gateway/contracts/schemas";
@@ -46,27 +46,6 @@ export const layer = Layer.effectDiscard(
         return yield* HttpServerResponse.json(
           items satisfies ReadonlyArray<EnvironmentRecord>,
         ).pipe(Effect.orDie);
-      }).pipe(Effect.catchTag("DatabaseError", (error) => jsonError(error.message, 500))),
-    );
-
-    yield* router.add("POST", "/api/gateway/t3code-catalog/sync", (request) =>
-      Effect.gen(function* () {
-        const payload = yield* HttpServerRequest.schemaBodyJson(CatalogSyncRequest).pipe(
-          Effect.orDie,
-        );
-        const sessionToken = readSessionToken(request.cookies);
-        if (sessionToken === undefined) {
-          return yield* jsonError("Authentication required", 401);
-        }
-
-        const deviceId = yield* hashSessionToken(sessionToken);
-        const response = yield* environments.syncCatalog(
-          deviceId,
-          payload.installedGatewayEnvironmentIds,
-        );
-        return yield* HttpServerResponse.json(response satisfies CatalogSyncResponse).pipe(
-          Effect.orDie,
-        );
       }).pipe(Effect.catchTag("DatabaseError", (error) => jsonError(error.message, 500))),
     );
 
@@ -193,6 +172,37 @@ export const layer = Layer.effectDiscard(
           Effect.orDie,
         );
       }).pipe(Effect.catchTags(environmentRouteErrors)),
+    );
+
+    yield* router.add(
+      "POST",
+      "/api/gateway/environments/:environmentId/t3code-catalog-entry",
+      (request) =>
+        Effect.gen(function* () {
+          const params = yield* HttpRouter.params;
+          const environmentId = params.environmentId;
+          if (environmentId === undefined || environmentId.length === 0) {
+            return yield* jsonError("Environment ID is required", 400);
+          }
+
+          const sessionToken = readSessionToken(request.cookies);
+          if (sessionToken === undefined) {
+            return yield* jsonError("Authentication required", 401);
+          }
+
+          const payload = yield* HttpServerRequest.schemaBodyJson(T3CodeCatalogEntryRequest).pipe(
+            Effect.orDie,
+          );
+          const deviceId = yield* hashSessionToken(sessionToken);
+          const result = yield* environments.createT3CodeCatalogEntry(
+            deviceId,
+            environmentId,
+            payload,
+          );
+          return yield* HttpServerResponse.json(result satisfies T3CodeCatalogEntryResponse).pipe(
+            Effect.orDie,
+          );
+        }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add(
