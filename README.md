@@ -170,11 +170,18 @@ Bundled Traefik mode:
 ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>
 ```
 
-Tags are release versions. Example:
+Release tags are versions:
 
 ```text
 ghcr.io/tarik02/t3code-gateway:0.1.0
 ghcr.io/tarik02/t3code-gateway/bundled-traefik:0.1.0
+```
+
+Every `master` push also publishes test images tagged with the full commit SHA:
+
+```text
+ghcr.io/tarik02/t3code-gateway:sha-<full-commit-sha>
+ghcr.io/tarik02/t3code-gateway/bundled-traefik:sha-<full-commit-sha>
 ```
 
 ## External Traefik Usage

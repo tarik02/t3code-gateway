@@ -1,0 +1,52 @@
+name: snapshot images
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  container:
+    if: ${{ github.repository == 'tarik02/t3code-gateway' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: pnpm
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - run: pnpm package:runtime
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/bake-action@v6
+        env:
+          EXTERNAL_TRAEFIK_IMAGE: ghcr.io/${{ github.repository }}
+          BUNDLED_TRAEFIK_IMAGE: ghcr.io/${{ github.repository }}/bundled-traefik
+          VERSION: sha-${{ github.sha }}
+        with:
+          files: docker-bake.hcl
+          push: true
