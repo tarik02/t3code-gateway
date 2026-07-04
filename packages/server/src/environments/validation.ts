@@ -17,6 +17,7 @@ import {
 } from "./t3code-client.ts";
 import {
   computePublicUrls,
+  hasUrlUserinfo,
   isAbsoluteHttpUrl,
   isAbsoluteWsUrl,
   stripTrailingSlash,
@@ -80,9 +81,21 @@ export const validateEnvironmentInput = (
       return yield* new EnvironmentFailure({ message: "Label is required" });
     }
 
+    if (hasUrlUserinfo(internalHttpBaseUrl)) {
+      return yield* new EnvironmentFailure({
+        message: "Internal HTTP base URL must not include username or password",
+      });
+    }
+
     if (!isAbsoluteHttpUrl(internalHttpBaseUrl)) {
       return yield* new EnvironmentFailure({
         message: "Internal HTTP base URL must be an absolute http or https URL",
+      });
+    }
+
+    if (hasUrlUserinfo(internalWsBaseUrl)) {
+      return yield* new EnvironmentFailure({
+        message: "Internal WebSocket base URL must not include username or password",
       });
     }
 

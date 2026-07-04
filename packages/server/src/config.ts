@@ -16,6 +16,15 @@ export const GatewayConfig = Config.all({
   traefikEntrypoint: Config.string("T3_GATEWAY_TRAEFIK_ENTRYPOINT").pipe(
     Config.withDefault("websecure"),
   ),
+  traefikTlsEnabled: Config.boolean("T3_GATEWAY_TRAEFIK_TLS_ENABLED").pipe(
+    Config.withDefault(true),
+  ),
+  traefikCertResolver: Config.string("T3_GATEWAY_TRAEFIK_CERT_RESOLVER").pipe(
+    Config.withDefault(""),
+  ),
+  traefikAuthMiddlewares: Config.string("T3_GATEWAY_TRAEFIK_AUTH_MIDDLEWARES").pipe(
+    Config.withDefault(""),
+  ),
   adminStaticRoot: Config.string("T3_GATEWAY_ADMIN_STATIC_ROOT").pipe(Config.option),
   t3codeWebBuildId: Config.string("T3_GATEWAY_T3CODE_WEB_BUILD_ID").pipe(Config.option),
 });

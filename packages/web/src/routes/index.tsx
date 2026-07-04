@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
-import { getCurrentUser, getGatewayStatus, logout } from "../lib/gateway-api.ts";
+import { getCurrentUser, getGatewayStatus, getTraefikConfig, logout } from "../lib/gateway-api.ts";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -19,6 +19,12 @@ function Home() {
   const statusQuery = useQuery({
     queryKey: ["gateway", "status"],
     queryFn: getGatewayStatus,
+    enabled: currentUserQuery.data != null,
+  });
+
+  const traefikQuery = useQuery({
+    queryKey: ["gateway", "traefik", "config"],
+    queryFn: getTraefikConfig,
     enabled: currentUserQuery.data != null,
   });
 
@@ -88,6 +94,32 @@ function Home() {
               <dd>{statusQuery.data.t3codeWeb.buildId ?? "not configured"}</dd>
             </div>
           </dl>
+        ) : null}
+      </section>
+
+      <section className="rounded-lg border border-border p-4">
+        <h2 className="text-lg font-medium">Traefik diagnostics</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Generated dynamic routing config for enabled environments.
+        </p>
+        {traefikQuery.isLoading ? <p className="mt-2 text-sm">Loading Traefik config...</p> : null}
+        {traefikQuery.error ? (
+          <p className="mt-2 text-sm text-destructive">
+            {traefikQuery.error instanceof Error
+              ? traefikQuery.error.message
+              : "Failed to load Traefik config"}
+          </p>
+        ) : null}
+        {traefikQuery.data ? (
+          <div className="mt-3 space-y-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">Dynamic file: </span>
+              <span>{traefikQuery.data.dynamicFilePath ?? "not configured"}</span>
+            </div>
+            <pre className="max-h-96 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed">
+              {traefikQuery.data.yaml}
+            </pre>
+          </div>
         ) : null}
       </section>
     </Shell>

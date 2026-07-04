@@ -6,6 +6,7 @@ import type {
   GatewayStatus,
   LoginRequest,
   LoginResponse,
+  TraefikConfigResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
 } from "@t3code-gateway/contracts/schemas";
@@ -72,6 +73,14 @@ export async function getGatewayStatus(): Promise<GatewayStatus> {
   });
 
   return readJson<GatewayStatus>(response);
+}
+
+export async function getTraefikConfig(): Promise<TraefikConfigResponse> {
+  const response = await fetch("/api/gateway/traefik/config", {
+    credentials: "include",
+  });
+
+  return readJson<TraefikConfigResponse>(response);
 }
 
 export async function listEnvironments(): Promise<EnvironmentRecord[]> {

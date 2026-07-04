@@ -22,8 +22,10 @@ import { layer as authRoutesLayer } from "./auth-routes.ts";
 import { layer as environmentRoutesLayer } from "./environment-routes.ts";
 import { layer as gatewaySessionMiddlewareLayer } from "./gateway-session-middleware.ts";
 import { layer as rpcHandlersLayer } from "./rpc-handlers.ts";
+import { layer as traefikRoutesLayer } from "./traefik-routes.ts";
 import { withSessionGuard } from "./session-guard.ts";
 import { layer as authLayer } from "../auth/service.ts";
+import { layer as traefikReconcilerLayer, TraefikReconciler } from "../traefik/reconciler.ts";
 
 const foundationLayer = Layer.mergeAll(
   configLayer,
@@ -45,14 +47,21 @@ const environmentLiveLayer = environmentServiceLayer.pipe(
   Layer.provide(foundationLayer),
 );
 
+const traefikLiveLayer = traefikReconcilerLayer.pipe(
+  Layer.provide(environmentLiveLayer),
+  Layer.provide(foundationLayer),
+);
+
 const bootstrapLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     yield* ensureDatabaseDirectory;
     yield* runMigrations;
     const auth = yield* AuthService;
     yield* auth.bootstrapFirstUser();
+    const traefik = yield* TraefikReconciler;
+    yield* traefik.reconcile();
   }),
-).pipe(Layer.provide(authLiveLayer));
+).pipe(Layer.provide(traefikLiveLayer), Layer.provide(authLiveLayer));
 
 const gatewayRpcLayer = RpcServer.layerHttp({
   group: GatewayRpcs,
@@ -60,8 +69,14 @@ const gatewayRpcLayer = RpcServer.layerHttp({
   protocol: "http",
 }).pipe(Layer.provide(rpcHandlersLayer), Layer.provide(RpcSerialization.layerJson));
 
-const routesLayer = Layer.mergeAll(authRoutesLayer, gatewayRpcLayer, environmentRoutesLayer).pipe(
+const routesLayer = Layer.mergeAll(
+  authRoutesLayer,
+  gatewayRpcLayer,
+  environmentRoutesLayer,
+  traefikRoutesLayer,
+).pipe(
   HttpRouter.provideRequest(configLayer),
+  Layer.provideMerge(traefikLiveLayer),
   Layer.provideMerge(environmentLiveLayer),
   Layer.provideMerge(authLiveLayer),
   Layer.provideMerge(dataLayer),
@@ -111,5 +126,6 @@ export const runtimeLayer = serveLayer.pipe(
   Layer.provideMerge(dataLayer),
   Layer.provideMerge(authLiveLayer),
   Layer.provideMerge(environmentLiveLayer),
+  Layer.provideMerge(traefikLiveLayer),
   Layer.provideMerge(gatewaySessionMiddlewareLayer),
 );

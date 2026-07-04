@@ -18,10 +18,24 @@ export const computePublicUrls = (slug: string, publicBaseDomain: string) => {
   };
 };
 
+const urlHasUserinfo = (parsed: URL) => parsed.username.length > 0 || parsed.password.length > 0;
+
+export const hasUrlUserinfo = (url: string) => {
+  try {
+    return urlHasUserinfo(new URL(url));
+  } catch {
+    return false;
+  }
+};
+
 export const isAbsoluteHttpUrl = (url: string) => {
   try {
     const parsed = new URL(url);
-    return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host.length > 0;
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      parsed.host.length > 0 &&
+      !urlHasUserinfo(parsed)
+    );
   } catch {
     return false;
   }
@@ -30,7 +44,11 @@ export const isAbsoluteHttpUrl = (url: string) => {
 export const isAbsoluteWsUrl = (url: string) => {
   try {
     const parsed = new URL(url);
-    return (parsed.protocol === "ws:" || parsed.protocol === "wss:") && parsed.host.length > 0;
+    return (
+      (parsed.protocol === "ws:" || parsed.protocol === "wss:") &&
+      parsed.host.length > 0 &&
+      !urlHasUserinfo(parsed)
+    );
   } catch {
     return false;
   }

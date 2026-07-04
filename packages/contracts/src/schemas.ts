@@ -156,3 +156,10 @@ export const ValidateEnvironmentResponse = Schema.Struct({
 });
 
 export type ValidateEnvironmentResponse = typeof ValidateEnvironmentResponse.Type;
+
+export const TraefikConfigResponse = Schema.Struct({
+  yaml: Schema.String,
+  dynamicFilePath: Schema.optional(Schema.String),
+});
+
+export type TraefikConfigResponse = typeof TraefikConfigResponse.Type;

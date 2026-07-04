@@ -13,6 +13,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { DatabaseError } from "../environments/errors.ts";
 import { EnvironmentService } from "../environments/service.ts";
+import { TraefikReconciler } from "../traefik/reconciler.ts";
 
 const withJson = <A>(body: A) => HttpServerResponse.json(body).pipe(Effect.orDie);
 
@@ -52,6 +53,7 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const router = yield* HttpRouter.HttpRouter;
     const environments = yield* EnvironmentService;
+    const traefik = yield* TraefikReconciler;
 
     yield* router.add("GET", "/api/gateway/environments", () =>
       Effect.gen(function* () {
@@ -97,6 +99,7 @@ export const layer = Layer.effectDiscard(
             Effect.orDie,
           );
           const created = yield* environments.create(payload);
+          yield* traefik.reconcile();
           const response = yield* withJson(created satisfies EnvironmentRecord);
           return HttpServerResponse.setStatus(response, 201);
         }),
@@ -131,6 +134,7 @@ export const layer = Layer.effectDiscard(
             Effect.orDie,
           );
           const updated = yield* environments.update(environmentId, payload);
+          yield* traefik.reconcile();
           return yield* withJson(updated satisfies EnvironmentRecord);
         }),
       ),
@@ -146,6 +150,7 @@ export const layer = Layer.effectDiscard(
           }
 
           yield* environments.remove(environmentId);
+          yield* traefik.reconcile();
           return HttpServerResponse.empty({ status: 204 });
         }),
       ),
