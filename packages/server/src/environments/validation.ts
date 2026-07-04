@@ -1,14 +1,12 @@
 import type { EnvironmentInput } from "@t3code-gateway/contracts/schemas";
 import { EnvironmentFailure } from "@t3code-gateway/contracts/schemas";
-import { and, eq, ne } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 
 import type { GatewayConfig } from "../config.ts";
-import type { GatewayDatabase } from "../db/client.ts";
-import { environments } from "../db/schema.ts";
+import { EnvironmentRepository } from "../db/environment-repository.ts";
+import { DatabaseError } from "../db/errors.ts";
 import { DEFAULT_ENVIRONMENT_BROWSER_TOKEN_SCOPES } from "./constants.ts";
-import { DatabaseError } from "./errors.ts";
 import { isDnsSafeSlug } from "./slug.ts";
 import {
   exchangePairingCodeForBearerToken,
@@ -40,19 +38,10 @@ export interface ValidatedEnvironmentInput {
 }
 
 export interface EnvironmentValidationContext {
-  readonly db: GatewayDatabase;
+  readonly environmentRepository: EnvironmentRepository["Service"];
   readonly config: GatewayConfig;
   readonly client: HttpClient.HttpClient;
 }
-
-const dbEffect = <A>(run: () => A) =>
-  Effect.try({
-    try: run,
-    catch: (cause) =>
-      new DatabaseError({
-        message: cause instanceof Error ? cause.message : "Database operation failed",
-      }),
-  });
 
 const resolveBrowserTokenScopes = (scopes: ReadonlyArray<string> | undefined) =>
   scopes === undefined || scopes.length === 0
@@ -78,7 +67,7 @@ export const validateEnvironmentInput = (
   options?: { readonly excludeEnvironmentId?: string },
 ): Effect.Effect<ValidatedEnvironmentInput, EnvironmentFailure | DatabaseError> =>
   Effect.gen(function* () {
-    const { db, config, client } = context;
+    const { environmentRepository, config, client } = context;
 
     const requestedEnvironmentId = input.environmentId ?? "";
     const internalHttpBaseUrl = input.internalHttpBaseUrl;
@@ -151,34 +140,15 @@ export const validateEnvironmentInput = (
       return yield* new EnvironmentFailure({ message: "Label is required" });
     }
 
-    const slugConflict = yield* dbEffect(() =>
-      db
-        .select({ environmentId: environments.environmentId })
-        .from(environments)
-        .where(eq(environments.slug, slug))
-        .get(),
-    );
+    const slugConflict = yield* environmentRepository.findEnvironmentIdBySlug(slug);
 
-    if (
-      slugConflict !== undefined &&
-      slugConflict.environmentId !== options?.excludeEnvironmentId
-    ) {
+    if (slugConflict !== undefined && slugConflict !== options?.excludeEnvironmentId) {
       return yield* new EnvironmentFailure({ message: `Slug "${slug}" is already in use` });
     }
 
-    const environmentIdConflict = yield* dbEffect(() =>
-      db
-        .select({ environmentId: environments.environmentId })
-        .from(environments)
-        .where(
-          options?.excludeEnvironmentId === undefined
-            ? eq(environments.environmentId, environmentId)
-            : and(
-                eq(environments.environmentId, environmentId),
-                ne(environments.environmentId, options.excludeEnvironmentId),
-              ),
-        )
-        .get(),
+    const environmentIdConflict = yield* environmentRepository.findConflictingEnvironmentId(
+      environmentId,
+      options?.excludeEnvironmentId,
     );
 
     if (environmentIdConflict !== undefined) {
