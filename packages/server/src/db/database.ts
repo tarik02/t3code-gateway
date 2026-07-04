@@ -1,6 +1,7 @@
-import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
-import * as SqliteDrizzle from "drizzle-orm/effect-sqlite-node";
-import { migrate } from "drizzle-orm/effect-sqlite-node/migrator";
+import { DatabaseSync } from "node:sqlite";
+
+import { readMigrationFiles } from "drizzle-orm/migrator";
+import { migrate } from "drizzle-orm/sqlite-core/effect/session";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -9,11 +10,12 @@ import * as Path from "effect/Path";
 
 import { GatewayRuntimeConfig } from "../config.ts";
 import { DatabaseError, migrationError, reasonFromPlatformError } from "./errors.ts";
+import * as NodeSqliteDrizzle from "./effect-node-sqlite.ts";
 
 const migrationsFolder = new URL("../../drizzle", import.meta.url).pathname;
 
 export interface GatewayDatabaseClient extends Effect.Success<
-  ReturnType<typeof SqliteDrizzle.makeWithDefaults>
+  ReturnType<typeof NodeSqliteDrizzle.makeWithDefaults>
 > {}
 
 const ensureDatabaseDirectoryForPath = (databasePath: string) =>
@@ -41,34 +43,29 @@ export class GatewayDatabase extends Context.Service<
   GatewayDatabase,
   {
     readonly db: GatewayDatabaseClient;
+    readonly client: DatabaseSync;
     readonly runMigrations: Effect.Effect<void, DatabaseError>;
   }
 >()("@t3code-gateway/server/db/database/GatewayDatabase") {}
 
 export const make = Effect.gen(function* () {
-  const db = yield* SqliteDrizzle.makeWithDefaults();
+  const config = yield* GatewayRuntimeConfig;
+  yield* ensureDatabaseDirectoryForPath(config.databasePath);
+
+  const client = yield* Effect.sync(() => new DatabaseSync(config.databasePath));
+  const db = yield* NodeSqliteDrizzle.makeWithDefaults(client);
   const path = yield* Path.Path;
   const migrationsPath = path.resolve(migrationsFolder);
+  const migrations = readMigrationFiles({ migrationsFolder: migrationsPath });
 
   return GatewayDatabase.of({
+    client,
     db,
-    runMigrations: migrate(db, { migrationsFolder: migrationsPath }).pipe(
+    runMigrations: migrate(migrations, db._.session).pipe(
       Effect.asVoid,
       Effect.catchTags(migrationError),
     ),
   });
 });
 
-const sqliteLayer = Layer.unwrap(
-  Effect.gen(function* () {
-    const config = yield* GatewayRuntimeConfig;
-    yield* ensureDatabaseDirectoryForPath(config.databasePath);
-
-    return SqliteClient.layer({
-      filename: config.databasePath,
-      transformResultNames: (name: string) => name,
-    });
-  }),
-);
-
-export const layer = Layer.effect(GatewayDatabase, make).pipe(Layer.provide(sqliteLayer));
+export const layer = Layer.effect(GatewayDatabase, make);
