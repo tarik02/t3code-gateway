@@ -23,7 +23,18 @@ export default defineConfig({
   },
   plugins: [
     tanstackStart({
-      spa: {
+      pages: [
+        {
+          path: "/admin/",
+          prerender: {
+            crawlLinks: false,
+            outputPath: "index.html",
+          },
+        },
+      ],
+      prerender: {
+        autoStaticPathsDiscovery: false,
+        crawlLinks: false,
         enabled: true,
       },
     }),

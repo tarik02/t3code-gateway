@@ -2,6 +2,9 @@ import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { Button } from "../components/ui/button.tsx";
+import { Input } from "../components/ui/input.tsx";
+import { Label } from "../components/ui/label.tsx";
 import { login } from "../lib/gateway-api.ts";
 
 export const Route = createFileRoute("/login")({
@@ -26,50 +29,52 @@ function LoginPage() {
   });
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-6 py-8">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Gateway admin</h1>
-        <p className="text-sm text-muted-foreground">Sign in to manage the t3code gateway.</p>
-      </div>
+    <main className="grid min-h-dvh place-items-center bg-background px-4 py-8 text-foreground">
+      <section className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-2xl shadow-black/20">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="grid size-10 place-items-center rounded-xl border border-border bg-primary text-sm font-semibold text-primary-foreground">
+            T3
+          </div>
+          <div>
+            <h1 className="text-base font-semibold leading-5">t3code</h1>
+          </div>
+        </div>
 
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          loginMutation.mutate({ username, password });
-        }}
-      >
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">Username</span>
-          <input
-            className="w-full rounded-md border border-border bg-background px-3 py-2"
-            autoComplete="username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-        </label>
-
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">Password</span>
-          <input
-            className="w-full rounded-md border border-border bg-background px-3 py-2"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-
-        {error !== null ? <p className="text-sm text-red-600">{error}</p> : null}
-
-        <button
-          className="w-full rounded-md bg-foreground px-3 py-2 text-background disabled:opacity-60"
-          type="submit"
-          disabled={loginMutation.isPending}
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            loginMutation.mutate({ username, password });
+          }}
         >
-          {loginMutation.isPending ? "Signing in..." : "Sign in"}
-        </button>
-      </form>
+          <div className="space-y-1.5">
+            <Label>Username</Label>
+            <Input
+              nativeInput
+              autoComplete="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Password</Label>
+            <Input
+              nativeInput
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </div>
+
+          {error !== null ? <p className="text-xs text-destructive-foreground">{error}</p> : null}
+
+          <Button className="w-full" size="xs" type="submit" disabled={loginMutation.isPending}>
+            {loginMutation.isPending ? "Signing in..." : "Sign in"}
+          </Button>
+        </form>
+      </section>
     </main>
   );
 }

@@ -1,8 +1,10 @@
 import type {
   ChangePasswordRequest,
+  CreateEnvironmentPairingLinkRequest,
   CurrentUser,
   EnvironmentClientSession,
   EnvironmentInput,
+  EnvironmentPairingLink,
   EnvironmentRecord,
   GatewayStatus,
   LoginRequest,
@@ -176,6 +178,23 @@ export async function listEnvironmentClients(
   );
 
   return readJson<EnvironmentClientSession[]>(response);
+}
+
+export async function createEnvironmentPairingLink(
+  environmentId: string,
+  payload: CreateEnvironmentPairingLinkRequest,
+): Promise<EnvironmentPairingLink> {
+  const response = await fetch(
+    `/api/gateway/environments/${encodeURIComponent(environmentId)}/pairing-link`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return readJson<EnvironmentPairingLink>(response);
 }
 
 export async function revokeEnvironmentClient(
