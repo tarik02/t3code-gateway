@@ -37,7 +37,9 @@ jobs:
 
       - run: pnpm build
 
-      - run: pnpm package:runtime
+      - run: pnpm download:t3code-web
+
+      - run: T3CODE_WEB_DIST=packaging/runtime/t3code-web-dist pnpm package:runtime
 
       - id: version
         run: |
