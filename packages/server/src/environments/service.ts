@@ -17,7 +17,8 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 
 import { SecretEncryption, SecretEncryptionError } from "../crypto/secret-encryption.ts";
 import { GatewayRuntimeConfig } from "../config.ts";
-import { DatabaseError, type EnvironmentRow, GatewayPersistence } from "../db/persistence.ts";
+import { EnvironmentRepository, type EnvironmentRow } from "../db/environment-repository.ts";
+import { DatabaseError } from "../db/errors.ts";
 import {
   decodeStringArrayJson,
   decodeUnknownJson,
@@ -131,13 +132,14 @@ const buildPairingUrl = (publicHttpBaseUrl: string, credential: string) => {
 };
 
 const makeEnvironmentService = Effect.gen(function* () {
-  const persistence = yield* GatewayPersistence;
+  const environmentRepository = yield* EnvironmentRepository;
   const secrets = yield* SecretEncryption;
   const config = yield* GatewayRuntimeConfig;
   const client = yield* HttpClient.HttpClient;
-  const validationContext = { persistence, config, client };
+  const validationContext = { environmentRepository, config, client };
 
-  const loadEnvironmentRow = (environmentId: string) => persistence.findEnvironment(environmentId);
+  const loadEnvironmentRow = (environmentId: string) =>
+    environmentRepository.findEnvironment(environmentId);
 
   const decryptAdminToken = (encryptedToken: Buffer) =>
     secrets
@@ -151,13 +153,13 @@ const makeEnvironmentService = Effect.gen(function* () {
 
   const list = () =>
     Effect.gen(function* () {
-      const rows = yield* persistence.listEnvironments;
+      const rows = yield* environmentRepository.listEnvironments;
       return rows.map(rowToRecord);
     });
 
   const get = (environmentId: string) =>
     Effect.gen(function* () {
-      const row = yield* persistence.findEnvironment(environmentId);
+      const row = yield* environmentRepository.findEnvironment(environmentId);
 
       if (row === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
@@ -179,7 +181,7 @@ const makeEnvironmentService = Effect.gen(function* () {
         );
       const timestamp = DateTime.formatIso(DateTime.nowUnsafe());
 
-      yield* persistence.createEnvironment({
+      yield* environmentRepository.createEnvironment({
         environmentId: validated.environmentId,
         slug: validated.slug,
         label: validated.label,
@@ -200,7 +202,7 @@ const makeEnvironmentService = Effect.gen(function* () {
 
   const update = (environmentId: string, input: UpdateEnvironmentRequest) =>
     Effect.gen(function* () {
-      const existing = yield* persistence.findEnvironment(environmentId);
+      const existing = yield* environmentRepository.findEnvironment(environmentId);
 
       if (existing === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
@@ -294,7 +296,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       }
 
       const timestamp = DateTime.formatIso(DateTime.nowUnsafe());
-      yield* persistence.updateEnvironment(environmentId, {
+      yield* environmentRepository.updateEnvironment(environmentId, {
         ...nextValues,
         updatedAt: timestamp,
       });
@@ -304,13 +306,13 @@ const makeEnvironmentService = Effect.gen(function* () {
 
   const remove = (environmentId: string) =>
     Effect.gen(function* () {
-      const existing = yield* persistence.findEnvironment(environmentId);
+      const existing = yield* environmentRepository.findEnvironment(environmentId);
 
       if (existing === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
-      yield* persistence.deleteEnvironment(environmentId);
+      yield* environmentRepository.deleteEnvironment(environmentId);
     });
 
   const validate = (input: EnvironmentInput) =>
@@ -326,7 +328,7 @@ const makeEnvironmentService = Effect.gen(function* () {
 
   const validateForEdit = (environmentId: string, input: EnvironmentInput) =>
     Effect.gen(function* () {
-      const existing = yield* persistence.findEnvironment(environmentId);
+      const existing = yield* environmentRepository.findEnvironment(environmentId);
 
       if (existing === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
@@ -364,7 +366,9 @@ const makeEnvironmentService = Effect.gen(function* () {
       }
 
       const sessions = yield* listClientSessions(client, row.internalHttpBaseUrl, adminBearerToken);
-      const deviceSessionIds = new Set(yield* persistence.listEnvironmentSessionIds(environmentId));
+      const deviceSessionIds = new Set(
+        yield* environmentRepository.listEnvironmentSessionIds(environmentId),
+      );
 
       return sessions.map((session) =>
         Object.assign({}, session, {
@@ -433,7 +437,10 @@ const makeEnvironmentService = Effect.gen(function* () {
         trimmedSessionId,
       );
 
-      yield* persistence.deleteDeviceSessionByEnvironmentSession(environmentId, trimmedSessionId);
+      yield* environmentRepository.deleteDeviceSessionByEnvironmentSession(
+        environmentId,
+        trimmedSessionId,
+      );
 
       return result;
     });
@@ -441,7 +448,7 @@ const makeEnvironmentService = Effect.gen(function* () {
   const syncCatalog = (deviceId: string, installedGatewayEnvironmentIds: ReadonlyArray<string>) =>
     Effect.gen(function* () {
       const installedEnvironmentIds = new Set(installedGatewayEnvironmentIds);
-      const rows = yield* persistence.listEnvironments;
+      const rows = yield* environmentRepository.listEnvironments;
       const enabledRows = rows.filter((row) => row.enabled);
       const enabledEnvironmentIds = new Set(enabledRows.map((row) => row.environmentId));
 
@@ -470,7 +477,7 @@ const makeEnvironmentService = Effect.gen(function* () {
             const timestamp = DateTime.formatIso(DateTime.nowUnsafe());
             const expiresAt = expiresAtFromNow(bearerToken.expiresInSeconds);
 
-            yield* persistence.upsertDeviceSession({
+            yield* environmentRepository.upsertDeviceSession({
               id: `${deviceId}:${row.environmentId}`,
               deviceId,
               environmentId: row.environmentId,

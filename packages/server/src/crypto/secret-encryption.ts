@@ -1,5 +1,3 @@
-import { gcm } from "@noble/ciphers/aes.js";
-import { bytesToUtf8, concatBytes, randomBytes, utf8ToBytes } from "@noble/ciphers/utils.js";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -8,6 +6,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { GatewayRuntimeConfig } from "../config.ts";
+import { GatewayCrypto, GatewayCryptoError } from "./gateway-crypto.ts";
 
 const KEY_LENGTH = 32;
 const NONCE_LENGTH = 12;
@@ -61,18 +60,6 @@ export class SecretEncryptionError extends Schema.TaggedErrorClass<SecretEncrypt
   }
 }
 
-const encryptWithKey = (plaintext: string, key: Buffer): Buffer => {
-  const nonce = randomBytes(NONCE_LENGTH);
-  const encrypted = gcm(key, nonce).encrypt(utf8ToBytes(plaintext));
-  return Buffer.from(concatBytes(nonce, encrypted));
-};
-
-const decryptWithKey = (blob: Buffer, key: Buffer): string => {
-  const nonce = blob.subarray(0, NONCE_LENGTH);
-  const ciphertext = blob.subarray(NONCE_LENGTH);
-  return bytesToUtf8(gcm(key, nonce).decrypt(ciphertext));
-};
-
 const loadMasterKey = Effect.gen(function* () {
   const config = yield* GatewayRuntimeConfig;
   const keyFile = Option.getOrUndefined(config.secretKeyFile);
@@ -110,18 +97,28 @@ export const layer = Layer.effect(
   SecretEncryption,
   Effect.gen(function* () {
     const key = yield* loadMasterKey;
+    const crypto = yield* GatewayCrypto;
+    const textEncoder = new TextEncoder();
+    const textDecoder = new TextDecoder();
 
     return SecretEncryption.of({
       encrypt: (plaintext) =>
-        Effect.sync(() => encryptWithKey(plaintext, key)).pipe(
-          Effect.catchDefect((cause: unknown) =>
-            Effect.fail(
+        Effect.gen(function* () {
+          const nonce = yield* crypto.randomBytes(NONCE_LENGTH);
+          const ciphertextWithTag = yield* crypto.aes256GcmEncrypt({
+            key,
+            nonce,
+            plaintext: textEncoder.encode(plaintext),
+          });
+          return Buffer.concat([Buffer.from(nonce), Buffer.from(ciphertextWithTag)]);
+        }).pipe(
+          Effect.mapError(
+            (error: GatewayCryptoError) =>
               new SecretEncryptionError({
                 operation: "encrypt",
                 reason: "cipherFailed",
-                cause,
+                cause: error,
               }),
-            ),
           ),
         ),
       decrypt: (ciphertext) =>
@@ -134,17 +131,25 @@ export const layer = Layer.effect(
             });
           }
 
-          return yield* Effect.sync(() => decryptWithKey(ciphertext, key)).pipe(
-            Effect.catchDefect((cause: unknown) =>
-              Effect.fail(
-                new SecretEncryptionError({
-                  operation: "decrypt",
-                  reason: "cipherFailed",
-                  cause,
-                }),
+          const nonce = ciphertext.subarray(0, NONCE_LENGTH);
+          const ciphertextWithTag = ciphertext.subarray(NONCE_LENGTH);
+          const plaintext = yield* crypto
+            .aes256GcmDecrypt({
+              key,
+              nonce,
+              ciphertextWithTag,
+            })
+            .pipe(
+              Effect.mapError(
+                (error: GatewayCryptoError) =>
+                  new SecretEncryptionError({
+                    operation: "decrypt",
+                    reason: "cipherFailed",
+                    cause: error,
+                  }),
               ),
-            ),
-          );
+            );
+          return textDecoder.decode(plaintext);
         }),
     });
   }),

@@ -1,8 +1,8 @@
-import { scrypt } from "@noble/hashes/scrypt.js";
-import { randomBytes } from "@noble/hashes/utils.js";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as Result from "effect/Result";
+
+import { GatewayCrypto } from "../crypto/gateway-crypto.ts";
 
 const keyLength = 64;
 const saltLength = 16;
@@ -15,28 +15,25 @@ const scryptOptions = {
   maxmem: 64 * 1024 * 1024,
 } as const;
 
-const equalBytes = (left: Uint8Array, right: Uint8Array) => {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left[index]! ^ right[index]!;
-  }
-  return difference === 0;
-};
-
-export const hashPassword = (password: string) =>
-  Effect.sync(() => {
-    const salt = randomBytes(saltLength);
-    const key = scrypt(password, salt, scryptOptions);
+export const hashPassword = (crypto: GatewayCrypto["Service"], password: string) =>
+  Effect.gen(function* () {
+    const salt = yield* crypto.randomBytes(saltLength);
+    const key = yield* crypto.scrypt({
+      password,
+      salt,
+      keyLength,
+      ...scryptOptions,
+    });
 
     return `scrypt:${Encoding.encodeBase64Url(salt)}:${Encoding.encodeBase64Url(key)}`;
   });
 
-export const verifyPassword = (password: string, passwordHash: string) =>
-  Effect.sync(() => {
+export const verifyPassword = (
+  crypto: GatewayCrypto["Service"],
+  password: string,
+  passwordHash: string,
+) =>
+  Effect.gen(function* () {
     const [algorithm = "", encodedSalt = "", encodedKey = ""] = passwordHash.split(":");
     if (algorithm !== "scrypt" || encodedSalt.length === 0 || encodedKey.length === 0) {
       return false;
@@ -50,7 +47,12 @@ export const verifyPassword = (password: string, passwordHash: string) =>
 
     const salt = decodedSalt.success;
     const expectedKey = decodedKey.success;
-    const key = scrypt(password, salt, scryptOptions);
+    const key = yield* crypto.scrypt({
+      password,
+      salt,
+      keyLength,
+      ...scryptOptions,
+    });
 
-    return equalBytes(key, expectedKey);
+    return yield* crypto.timingSafeEqual(key, expectedKey);
   });

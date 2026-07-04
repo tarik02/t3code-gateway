@@ -16,8 +16,6 @@
   "dependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/sql-sqlite-node": "4.0.0-beta.78",
-    "@noble/ciphers": "^2.2.0",
-    "@noble/hashes": "^2.2.0",
     "@t3code-gateway/contracts": "workspace:*",
     "drizzle-orm": "1.0.0-rc.4",
     "effect": "catalog:",

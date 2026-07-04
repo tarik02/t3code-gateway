@@ -8,7 +8,9 @@ import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import { DatabaseError, GatewayPersistence } from "../db/persistence.ts";
+import { GatewayCrypto } from "../crypto/gateway-crypto.ts";
+import { AuthRepository } from "../db/auth-repository.ts";
+import { DatabaseError } from "../db/errors.ts";
 import { DEFAULT_ADMIN_USERNAME, SESSION_TTL_MS } from "./constants.ts";
 import { hashPassword, verifyPassword } from "./password.ts";
 
@@ -48,22 +50,23 @@ const toAuthenticatedUser = (row: { id: string; username: string }): Authenticat
 });
 
 const makeAuthService = Effect.gen(function* () {
-  const persistence = yield* GatewayPersistence;
+  const authRepository = yield* AuthRepository;
   const crypto = yield* Crypto.Crypto;
+  const gatewayCrypto = yield* GatewayCrypto;
 
   const bootstrapFirstUser = () =>
     Effect.gen(function* () {
-      const existing = yield* persistence.countUsers;
+      const existing = yield* authRepository.countUsers;
       if (existing > 0) {
         return;
       }
 
       const userId = yield* crypto.randomUUIDv4;
       const generatedPassword = Encoding.encodeBase64Url(yield* crypto.randomBytes(24));
-      const passwordHash = yield* hashPassword(generatedPassword);
+      const passwordHash = yield* hashPassword(gatewayCrypto, generatedPassword);
       const timestamp = DateTime.formatIso(DateTime.nowUnsafe());
 
-      yield* persistence.createUser({
+      yield* authRepository.createUser({
         id: userId,
         username: DEFAULT_ADMIN_USERNAME,
         passwordHash,
@@ -75,9 +78,16 @@ const makeAuthService = Effect.gen(function* () {
         `Created initial gateway user "${DEFAULT_ADMIN_USERNAME}" with generated password: ${generatedPassword}`,
       );
     }).pipe(
-      Effect.catchTag("PlatformError", (error) =>
-        Effect.fail(new DatabaseError({ operation: "authUser", reason: "unknown", cause: error })),
-      ),
+      Effect.catchTags({
+        GatewayCryptoError: (error) =>
+          Effect.fail(
+            new DatabaseError({ operation: "authUser", reason: "unknown", cause: error }),
+          ),
+        PlatformError: (error) =>
+          Effect.fail(
+            new DatabaseError({ operation: "authUser", reason: "unknown", cause: error }),
+          ),
+      }),
     );
 
   const hashSessionTokenLocal = (token: string) =>
@@ -101,7 +111,7 @@ const makeAuthService = Effect.gen(function* () {
       );
       const createdAt = DateTime.formatIso(DateTime.nowUnsafe());
 
-      yield* persistence.createSession({
+      yield* authRepository.createSession({
         id: sessionId,
         userId,
         sessionTokenHash,
@@ -125,7 +135,7 @@ const makeAuthService = Effect.gen(function* () {
       }
 
       const sessionTokenHash = yield* hashSessionTokenLocal(sessionToken);
-      const row = yield* persistence.findSessionUserByTokenHash(sessionTokenHash);
+      const row = yield* authRepository.findSessionUserByTokenHash(sessionTokenHash);
 
       if (row === undefined) {
         return null;
@@ -133,7 +143,7 @@ const makeAuthService = Effect.gen(function* () {
 
       const expiresAt = Option.getOrNull(DateTime.make(row.expiresAt));
       if (expiresAt === null || DateTime.isPastUnsafe(expiresAt)) {
-        yield* persistence.deleteSessionById(row.sessionId);
+        yield* authRepository.deleteSessionById(row.sessionId);
         return null;
       }
 
@@ -148,13 +158,13 @@ const makeAuthService = Effect.gen(function* () {
 
   const login = (username: string, password: string) =>
     Effect.gen(function* () {
-      const row = yield* persistence.findUserByUsername(username);
+      const row = yield* authRepository.findUserByUsername(username);
 
       if (row === undefined) {
         return yield* new AuthFailure({ message: "Invalid username or password" });
       }
 
-      const valid = yield* verifyPassword(password, row.passwordHash);
+      const valid = yield* verifyPassword(gatewayCrypto, password, row.passwordHash);
       if (!valid) {
         return yield* new AuthFailure({ message: "Invalid username or password" });
       }
@@ -164,7 +174,11 @@ const makeAuthService = Effect.gen(function* () {
         user: toAuthenticatedUser(row),
         sessionToken,
       };
-    });
+    }).pipe(
+      Effect.catchTag("GatewayCryptoError", (error) =>
+        Effect.fail(new AuthFailure({ message: error.message })),
+      ),
+    );
 
   const logout = (sessionToken: string | undefined) =>
     Effect.gen(function* () {
@@ -173,7 +187,7 @@ const makeAuthService = Effect.gen(function* () {
       }
 
       const sessionTokenHash = yield* hashSessionTokenLocal(sessionToken);
-      yield* persistence.deleteSessionByTokenHash(sessionTokenHash);
+      yield* authRepository.deleteSessionByTokenHash(sessionTokenHash);
     }).pipe(
       Effect.catchTag("PlatformError", (error) =>
         Effect.fail(
@@ -195,39 +209,41 @@ const makeAuthService = Effect.gen(function* () {
         return yield* new AuthFailure({ message: "Authentication required" });
       }
 
-      const row = yield* persistence.findUserPasswordById(user.id);
+      const row = yield* authRepository.findUserPasswordById(user.id);
 
       if (row === undefined) {
         return yield* new AuthFailure({ message: "Authentication required" });
       }
 
-      const valid = yield* verifyPassword(currentPassword, row.passwordHash);
+      const valid = yield* verifyPassword(gatewayCrypto, currentPassword, row.passwordHash);
       if (!valid) {
         return yield* new AuthFailure({ message: "Current password is incorrect" });
       }
 
-      const passwordHash = yield* hashPassword(nextPassword);
+      const passwordHash = yield* hashPassword(gatewayCrypto, nextPassword);
       const timestamp = DateTime.formatIso(DateTime.nowUnsafe());
       const sessionTokenHash =
         sessionToken !== undefined && sessionToken.length > 0
           ? yield* hashSessionTokenLocal(sessionToken)
           : null;
 
-      yield* persistence.updateUserPassword(user.id, passwordHash, timestamp);
+      yield* authRepository.updateUserPassword(user.id, passwordHash, timestamp);
 
       if (sessionTokenHash !== null) {
-        const currentSessionId = yield* persistence.findSessionIdByTokenHash(sessionTokenHash);
+        const currentSessionId = yield* authRepository.findSessionIdByTokenHash(sessionTokenHash);
 
         if (currentSessionId !== undefined) {
-          yield* persistence.deleteOtherUserSessions(user.id, currentSessionId);
+          yield* authRepository.deleteOtherUserSessions(user.id, currentSessionId);
         }
       }
     }).pipe(
-      Effect.catchTag("PlatformError", (error) =>
-        Effect.fail(
-          new DatabaseError({ operation: "authSession", reason: "unknown", cause: error }),
-        ),
-      ),
+      Effect.catchTags({
+        GatewayCryptoError: (error) => Effect.fail(new AuthFailure({ message: error.message })),
+        PlatformError: (error) =>
+          Effect.fail(
+            new DatabaseError({ operation: "authSession", reason: "unknown", cause: error }),
+          ),
+      }),
     );
 
   return AuthService.of({

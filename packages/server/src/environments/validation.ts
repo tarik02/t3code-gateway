@@ -4,7 +4,8 @@ import * as Effect from "effect/Effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 
 import type { GatewayConfig } from "../config.ts";
-import { DatabaseError, GatewayPersistence } from "../db/persistence.ts";
+import { EnvironmentRepository } from "../db/environment-repository.ts";
+import { DatabaseError } from "../db/errors.ts";
 import { DEFAULT_ENVIRONMENT_BROWSER_TOKEN_SCOPES } from "./constants.ts";
 import { isDnsSafeSlug } from "./slug.ts";
 import {
@@ -37,7 +38,7 @@ export interface ValidatedEnvironmentInput {
 }
 
 export interface EnvironmentValidationContext {
-  readonly persistence: GatewayPersistence["Service"];
+  readonly environmentRepository: EnvironmentRepository["Service"];
   readonly config: GatewayConfig;
   readonly client: HttpClient.HttpClient;
 }
@@ -66,7 +67,7 @@ export const validateEnvironmentInput = (
   options?: { readonly excludeEnvironmentId?: string },
 ): Effect.Effect<ValidatedEnvironmentInput, EnvironmentFailure | DatabaseError> =>
   Effect.gen(function* () {
-    const { persistence, config, client } = context;
+    const { environmentRepository, config, client } = context;
 
     const requestedEnvironmentId = input.environmentId ?? "";
     const internalHttpBaseUrl = input.internalHttpBaseUrl;
@@ -139,13 +140,13 @@ export const validateEnvironmentInput = (
       return yield* new EnvironmentFailure({ message: "Label is required" });
     }
 
-    const slugConflict = yield* persistence.findEnvironmentIdBySlug(slug);
+    const slugConflict = yield* environmentRepository.findEnvironmentIdBySlug(slug);
 
     if (slugConflict !== undefined && slugConflict !== options?.excludeEnvironmentId) {
       return yield* new EnvironmentFailure({ message: `Slug "${slug}" is already in use` });
     }
 
-    const environmentIdConflict = yield* persistence.findConflictingEnvironmentId(
+    const environmentIdConflict = yield* environmentRepository.findConflictingEnvironmentId(
       environmentId,
       options?.excludeEnvironmentId,
     );
