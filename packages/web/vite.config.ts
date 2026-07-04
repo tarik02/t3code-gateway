@@ -5,6 +5,7 @@ import "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  base: "/admin/",
   lint: {
     rules: {
       "eslint/no-restricted-imports": [

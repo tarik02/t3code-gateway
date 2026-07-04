@@ -8,6 +8,7 @@ export function getRouter() {
 
   return createRouter({
     routeTree,
+    basepath: "/admin",
     context: {
       queryClient,
     },

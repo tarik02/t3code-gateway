@@ -14,12 +14,15 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
+    "@node-rs/argon2": "^2.0.2",
     "@t3code-gateway/contracts": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.4",
     "effect": "catalog:",
     "yaml": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "drizzle-kit": "1.0.0-rc.4",
     "vite-plus": "catalog:"
   }
 }

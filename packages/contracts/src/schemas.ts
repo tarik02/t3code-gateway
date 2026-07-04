@@ -40,6 +40,10 @@ export const ChangePasswordRequest = Schema.Struct({
 
 export type ChangePasswordRequest = typeof ChangePasswordRequest.Type;
 
+export class AuthFailure extends Schema.TaggedErrorClass<AuthFailure>()("AuthFailure", {
+  message: Schema.String,
+}) {}
+
 export const CatalogSyncRequest = Schema.Struct({
   installedGatewayEnvironmentIds: Schema.Array(Schema.String),
 });

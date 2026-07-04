@@ -1,0 +1,100 @@
+import * as Http from "node:http";
+import { GatewayRpcs } from "@t3code-gateway/contracts/rpc";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpStaticServer from "effect/unstable/http/HttpStaticServer";
+import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
+import * as RpcServer from "effect/unstable/rpc/RpcServer";
+
+import { AuthService } from "../auth/service.ts";
+import { configLayer, GatewayRuntimeConfig } from "../config.ts";
+import { layer as gatewayDbLayer } from "../db/client.ts";
+import { ensureDatabaseDirectory, runMigrations } from "../db/migrate.ts";
+import { layer as authRoutesLayer } from "./auth-routes.ts";
+import { layer as gatewaySessionMiddlewareLayer } from "./gateway-session-middleware.ts";
+import { layer as rpcHandlersLayer } from "./rpc-handlers.ts";
+import { withSessionGuard } from "./session-guard.ts";
+import { layer as authLayer } from "../auth/service.ts";
+
+const foundationLayer = Layer.mergeAll(
+  configLayer,
+  NodeCrypto.layer,
+  NodeHttpServer.layerHttpServices,
+  NodeServices.layer,
+);
+
+const dataLayer = gatewayDbLayer.pipe(Layer.provide(foundationLayer));
+
+const authLiveLayer = authLayer.pipe(Layer.provide(dataLayer), Layer.provide(foundationLayer));
+
+const bootstrapLayer = Layer.effectDiscard(
+  Effect.gen(function* () {
+    yield* ensureDatabaseDirectory;
+    yield* runMigrations;
+    const auth = yield* AuthService;
+    yield* auth.bootstrapFirstUser();
+  }),
+).pipe(Layer.provide(authLiveLayer));
+
+const gatewayRpcLayer = RpcServer.layerHttp({
+  group: GatewayRpcs,
+  path: "/api/gateway/rpc",
+  protocol: "http",
+}).pipe(Layer.provide(rpcHandlersLayer), Layer.provide(RpcSerialization.layerJson));
+
+const routesLayer = Layer.mergeAll(authRoutesLayer, gatewayRpcLayer).pipe(
+  HttpRouter.provideRequest(configLayer),
+  Layer.provideMerge(authLiveLayer),
+  Layer.provideMerge(dataLayer),
+  Layer.provideMerge(foundationLayer),
+);
+
+const adminStaticLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const config = yield* GatewayRuntimeConfig;
+    const adminStaticRoot = Option.getOrNull(config.adminStaticRoot);
+    if (adminStaticRoot === null) {
+      return Layer.empty;
+    }
+
+    return HttpStaticServer.layer({
+      root: adminStaticRoot,
+      prefix: "/admin",
+      spa: true,
+      index: "index.html",
+    });
+  }),
+).pipe(Layer.provide(foundationLayer));
+
+const gatewayAppLayer = HttpRouter.layer.pipe(
+  Layer.provideMerge(routesLayer),
+  Layer.provideMerge(adminStaticLayer),
+  Layer.provideMerge(bootstrapLayer),
+);
+
+const serverLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const config = yield* GatewayRuntimeConfig;
+    return NodeHttpServer.layer(() => Http.createServer(), {
+      host: config.listenHost,
+      port: config.listenPort,
+    });
+  }),
+).pipe(Layer.provide(foundationLayer));
+
+const serveLayer = HttpRouter.serve(gatewayAppLayer, {
+  middleware: (handler) => withSessionGuard(handler).pipe(Effect.orDie),
+});
+
+export const runtimeLayer = serveLayer.pipe(
+  Layer.provide(serverLayer),
+  Layer.provideMerge(foundationLayer),
+  Layer.provideMerge(dataLayer),
+  Layer.provideMerge(authLiveLayer),
+  Layer.provideMerge(gatewaySessionMiddlewareLayer),
+);
