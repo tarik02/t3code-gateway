@@ -16,8 +16,7 @@ import { AuthService } from "../auth/service.ts";
 import { layer as secretEncryptionLayer } from "../crypto/secret-encryption.ts";
 import { configLayer, GatewayRuntimeConfig } from "../config.ts";
 import { layer as environmentServiceLayer } from "../environments/service.ts";
-import { layer as gatewayDbLayer } from "../db/client.ts";
-import { ensureDatabaseDirectory, runMigrations } from "../db/migrate.ts";
+import { GatewayPersistence, layer as gatewayPersistenceLayer } from "../db/persistence.ts";
 import { layer as adminWebRoutesLayer } from "./admin-web-routes.ts";
 import { layer as authRoutesLayer } from "./auth-routes.ts";
 import { layer as environmentRoutesLayer } from "./environment-routes.ts";
@@ -36,7 +35,7 @@ const foundationLayer = Layer.mergeAll(
   NodeServices.layer,
 );
 
-const dataLayer = gatewayDbLayer.pipe(Layer.provide(foundationLayer));
+const dataLayer = gatewayPersistenceLayer.pipe(Layer.provide(foundationLayer));
 
 const authLiveLayer = authLayer.pipe(Layer.provide(dataLayer), Layer.provide(foundationLayer));
 
@@ -56,8 +55,8 @@ const traefikLiveLayer = traefikReconcilerLayer.pipe(
 
 const bootstrapLayer = Layer.effectDiscard(
   Effect.gen(function* () {
-    yield* ensureDatabaseDirectory;
-    yield* runMigrations;
+    const persistence = yield* GatewayPersistence;
+    yield* persistence.runMigrations;
     const auth = yield* AuthService;
     yield* auth.bootstrapFirstUser();
     const traefik = yield* TraefikReconciler;

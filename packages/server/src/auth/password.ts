@@ -1,7 +1,8 @@
-import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { scrypt } from "@noble/hashes/scrypt.js";
+import { randomBytes } from "@noble/hashes/utils.js";
 import * as Effect from "effect/Effect";
-
-import { PasswordError } from "./errors.ts";
+import * as Encoding from "effect/Encoding";
+import * as Result from "effect/Result";
 
 const keyLength = 64;
 const saltLength = 16;
@@ -10,44 +11,46 @@ const scryptOptions = {
   N: 16_384,
   r: 8,
   p: 1,
+  dkLen: keyLength,
   maxmem: 64 * 1024 * 1024,
 } as const;
 
-const derivePasswordKey = (password: string, salt: Buffer) =>
-  new Promise<Buffer>((resolve, reject) => {
-    scrypt(password, salt, keyLength, scryptOptions, (error, key) => {
-      if (error) {
-        reject(error);
-      } else {
-        resolve(key);
-      }
-    });
-  });
+const equalBytes = (left: Uint8Array, right: Uint8Array) => {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left[index]! ^ right[index]!;
+  }
+  return difference === 0;
+};
 
 export const hashPassword = (password: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const salt = randomBytes(saltLength);
-      const key = await derivePasswordKey(password, salt);
+  Effect.sync(() => {
+    const salt = randomBytes(saltLength);
+    const key = scrypt(password, salt, scryptOptions);
 
-      return `scrypt:${salt.toString("base64url")}:${key.toString("base64url")}`;
-    },
-    catch: () => new PasswordError({ message: "Failed to hash password" }),
+    return `scrypt:${Encoding.encodeBase64Url(salt)}:${Encoding.encodeBase64Url(key)}`;
   });
 
 export const verifyPassword = (password: string, passwordHash: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const [algorithm = "", encodedSalt = "", encodedKey = ""] = passwordHash.split(":");
-      if (algorithm !== "scrypt" || encodedSalt.length === 0 || encodedKey.length === 0) {
-        return false;
-      }
+  Effect.sync(() => {
+    const [algorithm = "", encodedSalt = "", encodedKey = ""] = passwordHash.split(":");
+    if (algorithm !== "scrypt" || encodedSalt.length === 0 || encodedKey.length === 0) {
+      return false;
+    }
 
-      const salt = Buffer.from(encodedSalt, "base64url");
-      const expectedKey = Buffer.from(encodedKey, "base64url");
-      const key = await derivePasswordKey(password, salt);
+    const decodedSalt = Encoding.decodeBase64Url(encodedSalt);
+    const decodedKey = Encoding.decodeBase64Url(encodedKey);
+    if (Result.isFailure(decodedSalt) || Result.isFailure(decodedKey)) {
+      return false;
+    }
 
-      return key.length === expectedKey.length && timingSafeEqual(key, expectedKey);
-    },
-    catch: () => new PasswordError({ message: "Failed to verify password" }),
+    const salt = decodedSalt.success;
+    const expectedKey = decodedKey.success;
+    const key = scrypt(password, salt, scryptOptions);
+
+    return equalBytes(key, expectedKey);
   });

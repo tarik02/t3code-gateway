@@ -17,7 +17,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
-import { DatabaseError } from "../environments/errors.ts";
+import { DatabaseError } from "../db/persistence.ts";
 import { EnvironmentService } from "../environments/service.ts";
 import { TraefikReconciler } from "../traefik/reconciler.ts";
 import { hashSessionToken } from "../auth/session.ts";
