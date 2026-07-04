@@ -44,7 +44,11 @@ export const layer = Layer.effectDiscard(
         return yield* HttpServerResponse.json(
           items satisfies ReadonlyArray<EnvironmentRecord>,
         ).pipe(Effect.orDie);
-      }).pipe(Effect.catchTag("DatabaseError", (error) => jsonError(error.message, 500))),
+      }).pipe(
+        Effect.catchTags({
+          DatabaseError: (error) => jsonError(error.message, 500),
+        }),
+      ),
     );
 
     yield* router.add("POST", "/api/gateway/environments/validate", () =>

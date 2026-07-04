@@ -3,7 +3,7 @@ import { create } from "zustand";
 
 import { AUTH_ORCHESTRATION_READ_SCOPE, AUTH_STANDARD_CLIENT_SCOPES } from "./pairing-scopes.ts";
 
-type PairingDialogState = {
+interface PairingDialogState {
   readonly open: boolean;
   readonly environment: EnvironmentRecord | null;
   readonly clientLabel: string;
@@ -25,7 +25,7 @@ type PairingDialogState = {
   readonly setError: (error: string | null) => void;
   readonly setCopied: (copied: "link" | "code" | null) => void;
   readonly reset: () => void;
-};
+}
 
 export const usePairingDialogStore = create<PairingDialogState>((set) => ({
   open: false,

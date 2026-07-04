@@ -63,14 +63,22 @@ export const layer = Layer.effectDiscard(
           path: "/",
           secure: isSecureRequest(request),
         });
-      }).pipe(Effect.catchTag("DatabaseError", (error) => internalFailure(error.message))),
+      }).pipe(
+        Effect.catchTags({
+          DatabaseError: (error) => internalFailure(error.message),
+        }),
+      ),
     );
 
     yield* router.add("GET", "/api/gateway/auth/me", (request) =>
       Effect.gen(function* () {
         const user = yield* auth.currentUser(readSessionToken(request.cookies));
         return yield* HttpServerResponse.json(user satisfies CurrentUser | null);
-      }).pipe(Effect.catchTag("DatabaseError", (error) => internalFailure(error.message))),
+      }).pipe(
+        Effect.catchTags({
+          DatabaseError: (error) => internalFailure(error.message),
+        }),
+      ),
     );
 
     yield* router.add("POST", "/api/gateway/auth/change-password", (request) =>

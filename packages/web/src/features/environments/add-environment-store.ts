@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { parsePairingFields, slugify } from "./form-utils.ts";
 
-type AddEnvironmentDialogState = {
+interface AddEnvironmentDialogState {
   readonly open: boolean;
   readonly label: string;
   readonly slug: string;
@@ -18,7 +18,7 @@ type AddEnvironmentDialogState = {
   readonly setError: (error: string | null) => void;
   readonly applyPairingFields: (value: string) => boolean;
   readonly reset: () => void;
-};
+}
 
 const initialState = {
   open: false,

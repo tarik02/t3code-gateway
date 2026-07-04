@@ -76,7 +76,9 @@ export const make = Effect.gen(function* () {
     .select()
     .from(environments)
     .all()
-    .pipe(Effect.catchTags(queryError("environment")));
+    .pipe(
+      Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("environment", error) }),
+    );
 
   const findEnvironment = (environmentId: string) =>
     db
@@ -84,14 +86,19 @@ export const make = Effect.gen(function* () {
       .from(environments)
       .where(eq(environments.environmentId, environmentId))
       .get()
-      .pipe(Effect.catchTags(queryError("environment")));
+      .pipe(
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("environment", error) }),
+      );
 
   const createEnvironment = (input: CreateEnvironmentInput) =>
     db
       .insert(environments)
       .values(input)
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("environment")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("environment", error) }),
+      );
 
   const updateEnvironment = (environmentId: string, input: UpdateEnvironmentInput) =>
     db
@@ -99,14 +106,20 @@ export const make = Effect.gen(function* () {
       .set(input)
       .where(eq(environments.environmentId, environmentId))
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("environment")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("environment", error) }),
+      );
 
   const deleteEnvironment = (environmentId: string) =>
     db
       .delete(environments)
       .where(eq(environments.environmentId, environmentId))
       .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("environment")));
+      .pipe(
+        Effect.asVoid,
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("environment", error) }),
+      );
 
   const findEnvironmentIdBySlug = (slug: string) =>
     db
@@ -116,7 +129,7 @@ export const make = Effect.gen(function* () {
       .get()
       .pipe(
         Effect.map((row) => row?.environmentId),
-        Effect.catchTags(queryError("environment")),
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("environment", error) }),
       );
 
   const findConflictingEnvironmentId = (
@@ -137,7 +150,7 @@ export const make = Effect.gen(function* () {
       .get()
       .pipe(
         Effect.map((row) => row?.environmentId),
-        Effect.catchTags(queryError("environment")),
+        Effect.catchTags({ EffectDrizzleQueryError: (error) => queryError("environment", error) }),
       );
 
   return EnvironmentRepository.of({

@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "../../lib/utils.ts";
 
-type GatewayToastData = Record<string, never>;
+interface GatewayToastData {}
 
 const toastManager = Toast.createToastManager<GatewayToastData>();
 

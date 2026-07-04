@@ -14,9 +14,10 @@ import { EnvironmentFailure } from "@t3code-gateway/contracts/schemas";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 
-import { SecretEncryption, SecretEncryptionError } from "../crypto/secret-encryption.ts";
+import { SecretEncryption } from "../crypto/secret-encryption.ts";
 import { GatewayRuntimeConfig } from "../config.ts";
 import { EnvironmentRepository, type EnvironmentRow } from "../db/environment-repository.ts";
 import { DatabaseError } from "../db/errors.ts";
@@ -34,7 +35,6 @@ import {
   listClientSessions,
   revokeClientSession,
 } from "./t3code-client.ts";
-import * as Layer from "effect/Layer";
 
 export class EnvironmentService extends Context.Service<
   EnvironmentService,
@@ -107,25 +107,12 @@ const buildPairingUrl = (publicHttpBaseUrl: string, credential: string) => {
   return url.toString();
 };
 
-const makeEnvironmentService = Effect.gen(function* () {
+export const make = Effect.gen(function* () {
   const environmentRepository = yield* EnvironmentRepository;
   const secrets = yield* SecretEncryption;
   const config = yield* GatewayRuntimeConfig;
   const client = yield* HttpClient.HttpClient;
   const validationContext = { environmentRepository, config, client };
-
-  const loadEnvironmentRow = (environmentId: string) =>
-    environmentRepository.findEnvironment(environmentId);
-
-  const decryptAdminToken = (encryptedToken: Buffer) =>
-    secrets
-      .decrypt(encryptedToken)
-      .pipe(
-        Effect.mapError(
-          (error: SecretEncryptionError) =>
-            new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
-        ),
-      );
 
   const list = () =>
     Effect.gen(function* () {
@@ -147,14 +134,14 @@ const makeEnvironmentService = Effect.gen(function* () {
   const create = (input: EnvironmentInput) =>
     Effect.gen(function* () {
       const validated = yield* validateEnvironmentInput(validationContext, input);
-      const encryptedToken = yield* secrets
-        .encrypt(validated.adminBearerToken)
-        .pipe(
-          Effect.mapError(
-            (error) =>
+      const encryptedToken = yield* secrets.encrypt(validated.adminBearerToken).pipe(
+        Effect.catchTags({
+          SecretEncryptionError: (error) =>
+            Effect.fail(
               new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
-          ),
-        );
+            ),
+        }),
+      );
       const timestamp = DateTime.formatIso(DateTime.nowUnsafe());
 
       yield* environmentRepository.createEnvironment({
@@ -197,14 +184,14 @@ const makeEnvironmentService = Effect.gen(function* () {
       };
 
       if (needsRevalidation) {
-        const decryptedToken = yield* secrets
-          .decrypt(existing.adminTokenEncrypted)
-          .pipe(
-            Effect.mapError(
-              (error: SecretEncryptionError) =>
+        const decryptedToken = yield* secrets.decrypt(existing.adminTokenEncrypted).pipe(
+          Effect.catchTags({
+            SecretEncryptionError: (error) =>
+              Effect.fail(
                 new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
-            ),
-          );
+              ),
+          }),
+        );
 
         const validated = yield* validateEnvironmentInput(
           validationContext,
@@ -225,14 +212,14 @@ const makeEnvironmentService = Effect.gen(function* () {
           });
         }
 
-        const encryptedToken = yield* secrets
-          .encrypt(validated.adminBearerToken)
-          .pipe(
-            Effect.mapError(
-              (error: SecretEncryptionError) =>
+        const encryptedToken = yield* secrets.encrypt(validated.adminBearerToken).pipe(
+          Effect.catchTags({
+            SecretEncryptionError: (error) =>
+              Effect.fail(
                 new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
-            ),
-          );
+              ),
+          }),
+        );
 
         nextValues = {
           slug: validated.slug,
@@ -314,13 +301,20 @@ const makeEnvironmentService = Effect.gen(function* () {
 
   const listClients = (environmentId: string) =>
     Effect.gen(function* () {
-      const row = yield* loadEnvironmentRow(environmentId);
+      const row = yield* environmentRepository.findEnvironment(environmentId);
 
       if (row === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
-      const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
+      const adminBearerToken = yield* secrets.decrypt(row.adminTokenEncrypted).pipe(
+        Effect.catchTags({
+          SecretEncryptionError: (error) =>
+            Effect.fail(
+              new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
+            ),
+        }),
+      );
       if (adminBearerToken.length === 0) {
         return [];
       }
@@ -343,13 +337,20 @@ const makeEnvironmentService = Effect.gen(function* () {
         return yield* new EnvironmentFailure({ message: "At least one permission is required" });
       }
 
-      const row = yield* loadEnvironmentRow(environmentId);
+      const row = yield* environmentRepository.findEnvironment(environmentId);
 
       if (row === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
-      const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
+      const adminBearerToken = yield* secrets.decrypt(row.adminTokenEncrypted).pipe(
+        Effect.catchTags({
+          SecretEncryptionError: (error) =>
+            Effect.fail(
+              new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
+            ),
+        }),
+      );
       if (adminBearerToken.length === 0) {
         return yield* new EnvironmentFailure({ message: "Admin bearer token is required" });
       }
@@ -372,7 +373,7 @@ const makeEnvironmentService = Effect.gen(function* () {
 
   const createT3CodeCatalogEntry = (environmentId: string, input: T3CodeCatalogEntryRequest) =>
     Effect.gen(function* () {
-      const row = yield* loadEnvironmentRow(environmentId);
+      const row = yield* environmentRepository.findEnvironment(environmentId);
 
       if (row === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
@@ -383,7 +384,14 @@ const makeEnvironmentService = Effect.gen(function* () {
       }
 
       const scopes = decodeStringArrayJson(row.browserTokenScopesJson);
-      const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
+      const adminBearerToken = yield* secrets.decrypt(row.adminTokenEncrypted).pipe(
+        Effect.catchTags({
+          SecretEncryptionError: (error) =>
+            Effect.fail(
+              new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
+            ),
+        }),
+      );
       if (adminBearerToken.length === 0) {
         return yield* new EnvironmentFailure({ message: "Admin bearer token is required" });
       }
@@ -435,13 +443,20 @@ const makeEnvironmentService = Effect.gen(function* () {
         return yield* new EnvironmentFailure({ message: "Client session ID is required" });
       }
 
-      const row = yield* loadEnvironmentRow(environmentId);
+      const row = yield* environmentRepository.findEnvironment(environmentId);
 
       if (row === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
-      const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
+      const adminBearerToken = yield* secrets.decrypt(row.adminTokenEncrypted).pipe(
+        Effect.catchTags({
+          SecretEncryptionError: (error) =>
+            Effect.fail(
+              new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
+            ),
+        }),
+      );
       if (adminBearerToken.length === 0) {
         return yield* new EnvironmentFailure({ message: "Admin bearer token is required" });
       }
@@ -470,4 +485,4 @@ const makeEnvironmentService = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(EnvironmentService, makeEnvironmentService);
+export const layer = Layer.effect(EnvironmentService, make);

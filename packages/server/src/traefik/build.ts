@@ -3,27 +3,27 @@ import type { GatewayConfig } from "../config.ts";
 import { stripTrailingSlash } from "../environments/urls.ts";
 import { stringify } from "yaml";
 
-type TraefikRouter = {
+interface TraefikRouter {
   rule: string;
   entryPoints: ReadonlyArray<string>;
   service: string;
   middlewares?: ReadonlyArray<string>;
   tls?: Record<string, string> | Record<string, never>;
-};
+}
 
-type TraefikService = {
+interface TraefikService {
   loadBalancer: {
     passHostHeader: true;
     servers: ReadonlyArray<{ url: string }>;
   };
-};
+}
 
-export type TraefikDynamicConfig = {
+export interface TraefikDynamicConfig {
   http: {
     routers: Record<string, TraefikRouter>;
     services: Record<string, TraefikService>;
   };
-};
+}
 
 const routeName = (slug: string) => `t3-env-${slug}`;
 

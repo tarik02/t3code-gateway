@@ -16,22 +16,23 @@ import {
 } from "@t3code-gateway/contracts/schemas";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 
 import { AuthService } from "../auth/service.ts";
-import { DatabaseError } from "../db/errors.ts";
+import type { DatabaseError } from "../db/errors.ts";
 import { EnvironmentService } from "../environments/service.ts";
 import { TraefikReconciler } from "../traefik/reconciler.ts";
 import { buildGatewayStatus } from "./status.ts";
 import { layer as gatewaySessionMiddlewareLayer } from "./gateway-session-middleware.ts";
 
-const mapEnvironmentRpcError = (error: EnvironmentFailure | DatabaseError) =>
-  Schema.is(EnvironmentFailure)(error)
-    ? error
-    : new EnvironmentFailure({ message: error.message, status: 500 });
+const environmentRpcDatabaseErrors = {
+  DatabaseError: (error: DatabaseError) =>
+    Effect.fail(new EnvironmentFailure({ message: error.message, status: 500 })),
+};
 
-const environmentRpc = <A, R>(effect: Effect.Effect<A, EnvironmentFailure | DatabaseError, R>) =>
-  effect.pipe(Effect.mapError(mapEnvironmentRpcError));
+const environmentRpcErrors = {
+  EnvironmentFailure: (error: EnvironmentFailure) => Effect.fail(error),
+  ...environmentRpcDatabaseErrors,
+};
 
 export const layer = GatewayRpcs.toLayer(
   Effect.gen(function* () {
@@ -59,54 +60,59 @@ export const layer = GatewayRpcs.toLayer(
 
       "gateway.status": () => buildGatewayStatus,
 
-      "gateway.environments.list": () => environmentRpc(environments.list()),
+      "gateway.environments.list": () =>
+        environments.list().pipe(Effect.catchTags(environmentRpcDatabaseErrors)),
 
       "gateway.environments.get": (payload: EnvironmentIdPayload) =>
-        environmentRpc(environments.get(payload.environmentId)),
+        environments.get(payload.environmentId).pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.validate": (payload: EnvironmentInput) =>
-        environmentRpc(environments.validate(payload)),
+        environments.validate(payload).pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.validateForEdit": (payload: ValidateEnvironmentForEditPayload) =>
-        environmentRpc(environments.validateForEdit(payload.environmentId, payload.input)),
+        environments
+          .validateForEdit(payload.environmentId, payload.input)
+          .pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.create": (payload: EnvironmentInput) =>
-        environmentRpc(
-          Effect.gen(function* () {
-            const created = yield* environments.create(payload);
-            yield* traefik.reconcile();
-            return created;
-          }),
-        ),
+        Effect.gen(function* () {
+          const created = yield* environments.create(payload);
+          yield* traefik.reconcile();
+          return created;
+        }).pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.update": (payload: UpdateEnvironmentPayload) =>
-        environmentRpc(
-          Effect.gen(function* () {
-            const updated = yield* environments.update(payload.environmentId, payload.input);
-            yield* traefik.reconcile();
-            return updated;
-          }),
-        ),
+        Effect.gen(function* () {
+          const updated = yield* environments.update(payload.environmentId, payload.input);
+          yield* traefik.reconcile();
+          return updated;
+        }).pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.delete": (payload: EnvironmentIdPayload) =>
-        environmentRpc(
-          Effect.gen(function* () {
-            yield* environments.remove(payload.environmentId);
-            yield* traefik.reconcile();
-          }),
-        ),
+        Effect.gen(function* () {
+          yield* environments.remove(payload.environmentId);
+          yield* traefik.reconcile();
+        }).pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.clients.list": (payload: EnvironmentIdPayload) =>
-        environmentRpc(environments.listClients(payload.environmentId)),
+        environments
+          .listClients(payload.environmentId)
+          .pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.pairingLink": (payload: CreateEnvironmentPairingLinkPayload) =>
-        environmentRpc(environments.createPairingLink(payload.environmentId, payload.input)),
+        environments
+          .createPairingLink(payload.environmentId, payload.input)
+          .pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.t3codeCatalogEntry": (payload: CreateT3CodeCatalogEntryPayload) =>
-        environmentRpc(environments.createT3CodeCatalogEntry(payload.environmentId, payload.input)),
+        environments
+          .createT3CodeCatalogEntry(payload.environmentId, payload.input)
+          .pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.environments.clients.revoke": (payload: RevokeEnvironmentClientPayload) =>
-        environmentRpc(environments.revokeClient(payload.environmentId, payload.sessionId)),
+        environments
+          .revokeClient(payload.environmentId, payload.sessionId)
+          .pipe(Effect.catchTags(environmentRpcErrors)),
 
       "gateway.traefik.config": () => traefik.getConfig(),
     });

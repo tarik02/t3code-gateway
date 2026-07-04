@@ -61,13 +61,12 @@ const makeTraefikReconciler = Effect.gen(function* () {
 
   const readFileHash = (filePath: string) =>
     Effect.gen(function* () {
-      const content = yield* fs
-        .readFileString(filePath)
-        .pipe(
-          Effect.catchTag("PlatformError", (error) =>
+      const content = yield* fs.readFileString(filePath).pipe(
+        Effect.catchTags({
+          PlatformError: (error) =>
             error.reason["_tag"] === "NotFound" ? Effect.succeed(null) : Effect.fail(error),
-          ),
-        );
+        }),
+      );
       if (content === null) {
         return undefined;
       }
@@ -87,14 +86,16 @@ const makeTraefikReconciler = Effect.gen(function* () {
         yield* fs.rename(tempPath, targetPath);
       }).pipe(Effect.ensuring(fs.remove(tempPath, { force: true }).pipe(Effect.ignore)));
     }).pipe(
-      Effect.mapError(
-        (error) =>
-          new TraefikWriteError({
-            reason: traefikWriteFailureReason(error),
-            path: targetPath,
-            cause: error,
-          }),
-      ),
+      Effect.catchTags({
+        PlatformError: (error) =>
+          Effect.fail(
+            new TraefikWriteError({
+              reason: traefikWriteFailureReason(error),
+              path: targetPath,
+              cause: error,
+            }),
+          ),
+      }),
     );
 
   const buildYaml = (items: ReadonlyArray<EnvironmentRecord>) => {

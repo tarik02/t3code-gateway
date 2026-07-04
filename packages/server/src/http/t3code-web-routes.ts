@@ -28,9 +28,12 @@ export const layer = Layer.effectDiscard(
           contentType: "text/html; charset=utf-8",
         });
       }).pipe(
-        Effect.catchTag("PlatformError", () =>
-          Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 })),
-        ),
+        Effect.catchTags({
+          PlatformError: (error) =>
+            error.reason["_tag"] === "NotFound"
+              ? Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 }))
+              : Effect.fail(error),
+        }),
       ),
     );
   }),

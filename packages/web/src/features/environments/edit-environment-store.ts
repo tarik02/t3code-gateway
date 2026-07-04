@@ -1,7 +1,7 @@
 import type { EnvironmentRecord } from "@t3code-gateway/contracts/schemas";
 import { create } from "zustand";
 
-type EditEnvironmentDialogState = {
+interface EditEnvironmentDialogState {
   readonly open: boolean;
   readonly environment: EnvironmentRecord | null;
   readonly label: string;
@@ -17,7 +17,7 @@ type EditEnvironmentDialogState = {
   readonly setEnabled: (enabled: boolean) => void;
   readonly setError: (error: string | null) => void;
   readonly reset: () => void;
-};
+}
 
 export const useEditEnvironmentDialogStore = create<EditEnvironmentDialogState>((set) => ({
   open: false,

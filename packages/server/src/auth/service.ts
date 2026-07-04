@@ -121,11 +121,12 @@ const makeAuthService = Effect.gen(function* () {
 
       return sessionToken;
     }).pipe(
-      Effect.catchTag("PlatformError", (error) =>
-        Effect.fail(
-          new DatabaseError({ operation: "authSession", reason: "unknown", cause: error }),
-        ),
-      ),
+      Effect.catchTags({
+        PlatformError: (error) =>
+          Effect.fail(
+            new DatabaseError({ operation: "authSession", reason: "unknown", cause: error }),
+          ),
+      }),
     );
 
   const resolveSession = (sessionToken: string | undefined) =>
@@ -149,11 +150,12 @@ const makeAuthService = Effect.gen(function* () {
 
       return toAuthenticatedUser(row);
     }).pipe(
-      Effect.catchTag("PlatformError", (error) =>
-        Effect.fail(
-          new DatabaseError({ operation: "authSession", reason: "unknown", cause: error }),
-        ),
-      ),
+      Effect.catchTags({
+        PlatformError: (error) =>
+          Effect.fail(
+            new DatabaseError({ operation: "authSession", reason: "unknown", cause: error }),
+          ),
+      }),
     );
 
   const login = (username: string, password: string) =>
@@ -175,9 +177,9 @@ const makeAuthService = Effect.gen(function* () {
         sessionToken,
       };
     }).pipe(
-      Effect.catchTag("GatewayCryptoError", (error) =>
-        Effect.fail(new AuthFailure({ message: error.message })),
-      ),
+      Effect.catchTags({
+        GatewayCryptoError: (error) => Effect.fail(new AuthFailure({ message: error.message })),
+      }),
     );
 
   const logout = (sessionToken: string | undefined) =>
@@ -189,11 +191,12 @@ const makeAuthService = Effect.gen(function* () {
       const sessionTokenHash = yield* hashSessionTokenLocal(sessionToken);
       yield* authRepository.deleteSessionByTokenHash(sessionTokenHash);
     }).pipe(
-      Effect.catchTag("PlatformError", (error) =>
-        Effect.fail(
-          new DatabaseError({ operation: "authSession", reason: "unknown", cause: error }),
-        ),
-      ),
+      Effect.catchTags({
+        PlatformError: (error) =>
+          Effect.fail(
+            new DatabaseError({ operation: "authSession", reason: "unknown", cause: error }),
+          ),
+      }),
     );
 
   const currentUser = (sessionToken: string | undefined) => resolveSession(sessionToken);

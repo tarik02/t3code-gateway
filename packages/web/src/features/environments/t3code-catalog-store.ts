@@ -10,14 +10,14 @@ import {
 
 const t3CodeClientLabelStorageKey = "t3code-gateway:t3code-client-label";
 
-type T3CodeCatalogStore = {
+interface T3CodeCatalogStore {
   readonly installedEnvironmentIds: ReadonlySet<string>;
   readonly clientLabel: string | null;
   readonly load: () => Promise<void>;
   readonly rememberClientLabel: (clientLabel: string) => void;
   readonly installEntry: (entry: T3CodeCatalogEntryResponse) => Promise<void>;
   readonly removeEnvironment: (environmentId: string) => Promise<void>;
-};
+}
 
 export const useT3CodeCatalogStore = create<T3CodeCatalogStore>((set) => ({
   installedEnvironmentIds: new Set(),

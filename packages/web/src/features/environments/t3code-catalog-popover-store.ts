@@ -1,11 +1,11 @@
 import { create } from "zustand";
 
-type OpenInput = {
+interface OpenInput {
   readonly environmentId: string;
   readonly clientLabel: string | null;
-};
+}
 
-type T3CodeCatalogPopoverStore = {
+interface T3CodeCatalogPopoverStore {
   readonly openEnvironmentId: string | null;
   readonly editingClientLabel: boolean;
   readonly clientLabelInput: string;
@@ -14,7 +14,7 @@ type T3CodeCatalogPopoverStore = {
   readonly editClientLabel: () => void;
   readonly useRememberedClientLabel: () => void;
   readonly setClientLabelInput: (clientLabelInput: string) => void;
-};
+}
 
 export const useT3CodeCatalogPopoverStore = create<T3CodeCatalogPopoverStore>((set) => ({
   openEnvironmentId: null,
