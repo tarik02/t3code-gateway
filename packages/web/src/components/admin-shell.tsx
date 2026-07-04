@@ -32,7 +32,7 @@ export function AdminShell({
           <T3Logo />
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-semibold">T3 Code Gateway</h1>
+          <h1 className="truncate text-sm font-semibold">Code Gateway</h1>
         </div>
         <Button size="xs" variant="outline" onClick={() => setPasswordOpen(true)}>
           Reset password

@@ -35,7 +35,7 @@ function LoginPage() {
         <div className="mb-5 flex items-center gap-3">
           <T3Logo className="h-3" />
           <div>
-            <h1 className="text-base font-semibold leading-5">T3 Code Gateway</h1>
+            <h1 className="text-base font-semibold leading-5">Code Gateway</h1>
           </div>
         </div>
 
