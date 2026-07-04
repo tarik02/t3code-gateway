@@ -1,11 +1,13 @@
 import type {
   ChangePasswordRequest,
   CurrentUser,
+  EnvironmentClientSession,
   EnvironmentInput,
   EnvironmentRecord,
   GatewayStatus,
   LoginRequest,
   LoginResponse,
+  RevokeEnvironmentClientResponse,
   TraefikConfigResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
@@ -161,4 +163,32 @@ export async function deleteEnvironment(environmentId: string): Promise<void> {
   });
 
   await readJson<void>(response);
+}
+
+export async function listEnvironmentClients(
+  environmentId: string,
+): Promise<EnvironmentClientSession[]> {
+  const response = await fetch(
+    `/api/gateway/environments/${encodeURIComponent(environmentId)}/clients`,
+    {
+      credentials: "include",
+    },
+  );
+
+  return readJson<EnvironmentClientSession[]>(response);
+}
+
+export async function revokeEnvironmentClient(
+  environmentId: string,
+  sessionId: string,
+): Promise<RevokeEnvironmentClientResponse> {
+  const response = await fetch(
+    `/api/gateway/environments/${encodeURIComponent(environmentId)}/clients/${encodeURIComponent(sessionId)}/revoke`,
+    {
+      method: "POST",
+      credentials: "include",
+    },
+  );
+
+  return readJson<RevokeEnvironmentClientResponse>(response);
 }

@@ -3,6 +3,8 @@ import * as Layer from "effect/Layer";
 import {
   EnvironmentInput,
   EnvironmentRecord,
+  EnvironmentClientSession,
+  RevokeEnvironmentClientResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
 } from "@t3code-gateway/contracts/schemas";
@@ -154,6 +156,43 @@ export const layer = Layer.effectDiscard(
           return HttpServerResponse.empty({ status: 204 });
         }),
       ),
+    );
+
+    yield* router.add("GET", "/api/gateway/environments/:environmentId/clients", () =>
+      withEnvironmentErrors(
+        Effect.gen(function* () {
+          const params = yield* HttpRouter.params;
+          const environmentId = params.environmentId;
+          if (environmentId === undefined || environmentId.length === 0) {
+            return yield* environmentFailure("Environment ID is required");
+          }
+
+          const clients = yield* environments.listClients(environmentId);
+          return yield* withJson(clients satisfies ReadonlyArray<EnvironmentClientSession>);
+        }),
+      ),
+    );
+
+    yield* router.add(
+      "POST",
+      "/api/gateway/environments/:environmentId/clients/:sessionId/revoke",
+      () =>
+        withEnvironmentErrors(
+          Effect.gen(function* () {
+            const params = yield* HttpRouter.params;
+            const environmentId = params.environmentId;
+            const sessionId = params.sessionId;
+            if (environmentId === undefined || environmentId.length === 0) {
+              return yield* environmentFailure("Environment ID is required");
+            }
+            if (sessionId === undefined || sessionId.length === 0) {
+              return yield* environmentFailure("Client session ID is required");
+            }
+
+            const result = yield* environments.revokeClient(environmentId, sessionId);
+            return yield* withJson(result satisfies RevokeEnvironmentClientResponse);
+          }),
+        ),
     );
   }),
 );

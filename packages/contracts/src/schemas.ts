@@ -163,3 +163,58 @@ export const TraefikConfigResponse = Schema.Struct({
 });
 
 export type TraefikConfigResponse = typeof TraefikConfigResponse.Type;
+
+export const EnvironmentClientMetadataDeviceType = Schema.Literals([
+  "desktop",
+  "mobile",
+  "tablet",
+  "bot",
+  "unknown",
+]);
+
+export type EnvironmentClientMetadataDeviceType = typeof EnvironmentClientMetadataDeviceType.Type;
+
+export const EnvironmentClientMetadata = Schema.Struct({
+  label: Schema.optional(Schema.String),
+  ipAddress: Schema.optional(Schema.String),
+  userAgent: Schema.optional(Schema.String),
+  deviceType: EnvironmentClientMetadataDeviceType,
+  os: Schema.optional(Schema.String),
+  browser: Schema.optional(Schema.String),
+});
+
+export type EnvironmentClientMetadata = typeof EnvironmentClientMetadata.Type;
+
+export const EnvironmentClientSessionMethod = Schema.Literals([
+  "browser-session-cookie",
+  "bearer-access-token",
+  "dpop-access-token",
+]);
+
+export type EnvironmentClientSessionMethod = typeof EnvironmentClientSessionMethod.Type;
+
+export const EnvironmentClientGatewayRole = Schema.Literals(["admin", "device"]);
+
+export type EnvironmentClientGatewayRole = typeof EnvironmentClientGatewayRole.Type;
+
+export const EnvironmentClientSession = Schema.Struct({
+  sessionId: Schema.String,
+  subject: Schema.String,
+  scopes: Schema.Array(Schema.String),
+  method: EnvironmentClientSessionMethod,
+  client: EnvironmentClientMetadata,
+  issuedAt: Schema.String,
+  expiresAt: Schema.String,
+  lastConnectedAt: Schema.NullOr(Schema.String),
+  connected: Schema.Boolean,
+  current: Schema.Boolean,
+  gatewayRole: Schema.optional(EnvironmentClientGatewayRole),
+});
+
+export type EnvironmentClientSession = typeof EnvironmentClientSession.Type;
+
+export const RevokeEnvironmentClientResponse = Schema.Struct({
+  revoked: Schema.Boolean,
+});
+
+export type RevokeEnvironmentClientResponse = typeof RevokeEnvironmentClientResponse.Type;

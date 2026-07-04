@@ -1,4 +1,5 @@
 import { DEFAULT_BROWSER_TOKEN_SCOPES } from "@t3code-gateway/contracts/schemas";
+import type { EnvironmentClientSession } from "@t3code-gateway/contracts/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -8,6 +9,8 @@ import {
   deleteEnvironment,
   getCurrentUser,
   getEnvironment,
+  listEnvironmentClients,
+  revokeEnvironmentClient,
   updateEnvironment,
   validateEnvironmentForEdit,
 } from "../../lib/gateway-api.ts";
@@ -32,6 +35,12 @@ function EditEnvironmentPage() {
     enabled: currentUserQuery.data != null,
   });
 
+  const clientsQuery = useQuery({
+    queryKey: ["gateway", "environments", environmentId, "clients"],
+    queryFn: () => listEnvironmentClients(environmentId),
+    enabled: currentUserQuery.data != null && environmentQuery.data != null,
+  });
+
   const [slug, setSlug] = useState("");
   const [label, setLabel] = useState("");
   const [internalHttpBaseUrl, setInternalHttpBaseUrl] = useState("");
@@ -41,6 +50,8 @@ function EditEnvironmentPage() {
   const [enabled, setEnabled] = useState(true);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [clientError, setClientError] = useState<string | null>(null);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUserQuery.isSuccess && currentUserQuery.data === null) {
@@ -97,6 +108,22 @@ function EditEnvironmentPage() {
     onError: (cause) => {
       setValidationMessage(null);
       setError(cause instanceof Error ? cause.message : "Validation failed");
+    },
+  });
+
+  const revokeClientMutation = useMutation({
+    mutationFn: (sessionId: string) => revokeEnvironmentClient(environmentId, sessionId),
+    onSuccess: async () => {
+      setClientError(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["gateway", "environments", environmentId, "clients"],
+      });
+    },
+    onError: (cause) => {
+      setClientError(cause instanceof Error ? cause.message : "Revoke failed");
+    },
+    onSettled: () => {
+      setRevokingSessionId(null);
     },
   });
 
@@ -262,8 +289,158 @@ function EditEnvironmentPage() {
           </pre>
         </section>
       ) : null}
+
+      <ClientSessionsSection
+        clients={clientsQuery.data ?? []}
+        error={
+          clientsQuery.error instanceof Error
+            ? clientsQuery.error.message
+            : clientsQuery.error
+              ? "Failed to load client sessions"
+              : clientError
+        }
+        isLoading={clientsQuery.isLoading}
+        isRevoking={revokeClientMutation.isPending}
+        revokingSessionId={revokingSessionId}
+        onRevoke={(sessionId) => {
+          if (
+            window.confirm(
+              "Revoke this client session on the attached environment? This cannot be undone.",
+            )
+          ) {
+            setRevokingSessionId(sessionId);
+            revokeClientMutation.mutate(sessionId);
+          }
+        }}
+      />
     </AdminShell>
   );
+}
+
+function ClientSessionsSection({
+  clients,
+  error,
+  isLoading,
+  isRevoking,
+  revokingSessionId,
+  onRevoke,
+}: Readonly<{
+  clients: ReadonlyArray<EnvironmentClientSession>;
+  error: string | null;
+  isLoading: boolean;
+  isRevoking: boolean;
+  revokingSessionId: string | null;
+  onRevoke: (sessionId: string) => void;
+}>) {
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-medium">Client sessions</h2>
+        <p className="text-sm text-muted-foreground">
+          Active sessions on the attached t3code environment. Revoke only the session you select.
+        </p>
+      </div>
+
+      {isLoading ? <p className="text-sm">Loading client sessions...</p> : null}
+      {error !== null ? <p className="text-sm text-red-600">{error}</p> : null}
+
+      {!isLoading && clients.length === 0 ? (
+        <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+          No client sessions reported by the environment.
+        </p>
+      ) : null}
+
+      {clients.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/40">
+              <tr>
+                <th className="px-4 py-3 font-medium">Client</th>
+                <th className="px-4 py-3 font-medium">Method</th>
+                <th className="px-4 py-3 font-medium">Connected</th>
+                <th className="px-4 py-3 font-medium">Expires</th>
+                <th className="px-4 py-3 font-medium">Gateway</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map((clientSession) => (
+                <tr
+                  className="border-b border-border last:border-b-0"
+                  key={clientSession.sessionId}
+                >
+                  <td className="px-4 py-3">
+                    <div className="font-medium">
+                      {clientSession.client.label ?? clientSession.subject}
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {clientSession.sessionId}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatClientDetails(clientSession)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">{clientSession.method}</td>
+                  <td className="px-4 py-3">
+                    {clientSession.connected ? "yes" : "no"}
+                    {clientSession.current ? " (current)" : ""}
+                  </td>
+                  <td className="px-4 py-3 text-xs">{formatTimestamp(clientSession.expiresAt)}</td>
+                  <td className="px-4 py-3">
+                    {clientSession.gatewayRole === "admin" ? (
+                      <span className="rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">
+                        Gateway admin
+                      </span>
+                    ) : null}
+                    {clientSession.gatewayRole === "device" ? (
+                      <span className="rounded bg-sky-100 px-2 py-1 text-xs text-sky-900">
+                        Gateway device
+                      </span>
+                    ) : null}
+                    {clientSession.gatewayRole === undefined ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 disabled:opacity-60"
+                      type="button"
+                      disabled={isRevoking}
+                      onClick={() => onRevoke(clientSession.sessionId)}
+                    >
+                      {isRevoking && revokingSessionId === clientSession.sessionId
+                        ? "Revoking..."
+                        : "Revoke"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function formatClientDetails(clientSession: EnvironmentClientSession): string {
+  const parts = [
+    clientSession.client.deviceType,
+    clientSession.client.os,
+    clientSession.client.browser,
+    clientSession.client.ipAddress,
+  ].filter((part): part is string => part !== undefined && part.length > 0);
+
+  return parts.join(" · ");
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
 }
 
 function Field({

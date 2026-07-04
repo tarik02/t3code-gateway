@@ -1,11 +1,13 @@
 import type {
+  EnvironmentClientSession,
   EnvironmentInput,
   EnvironmentRecord,
+  RevokeEnvironmentClientResponse,
   UpdateEnvironmentRequest,
   ValidateEnvironmentResponse,
 } from "@t3code-gateway/contracts/schemas";
 import { EnvironmentFailure } from "@t3code-gateway/contracts/schemas";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -14,7 +16,7 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import { SecretEncryption, SecretEncryptionError } from "../crypto/secret-encryption.ts";
 import { GatewayRuntimeConfig } from "../config.ts";
 import { GatewayDb } from "../db/client.ts";
-import { environments } from "../db/schema.ts";
+import { deviceSessions, environments } from "../db/schema.ts";
 import { DatabaseError } from "./errors.ts";
 import {
   decodeStringArrayJson,
@@ -23,6 +25,7 @@ import {
   encodeUnknownJson,
 } from "./json-codecs.ts";
 import { validateEnvironmentInput } from "./validation.ts";
+import { listClientSessions, revokeClientSession } from "./t3code-client.ts";
 import * as Layer from "effect/Layer";
 
 type EnvironmentRow = typeof environments.$inferSelect;
@@ -51,6 +54,13 @@ export class EnvironmentService extends Context.Service<
       environmentId: string,
       input: EnvironmentInput,
     ) => Effect.Effect<ValidateEnvironmentResponse, EnvironmentFailure | DatabaseError>;
+    readonly listClients: (
+      environmentId: string,
+    ) => Effect.Effect<ReadonlyArray<EnvironmentClientSession>, EnvironmentFailure | DatabaseError>;
+    readonly revokeClient: (
+      environmentId: string,
+      sessionId: string,
+    ) => Effect.Effect<RevokeEnvironmentClientResponse, EnvironmentFailure | DatabaseError>;
   }
 >()("@t3code-gateway/server/environments/service/EnvironmentService") {}
 
@@ -89,12 +99,42 @@ const rowToRecord = (row: EnvironmentRow): EnvironmentRecord => ({
   lastCatalogSyncError: row.lastCatalogSyncError ?? undefined,
 });
 
+const resolveGatewayRole = (
+  session: EnvironmentClientSession,
+  adminTokenSessionId: string | null,
+  deviceSessionIds: ReadonlySet<string>,
+): EnvironmentClientSession["gatewayRole"] => {
+  if (session.current || session.sessionId === adminTokenSessionId) {
+    return "admin";
+  }
+
+  if (deviceSessionIds.has(session.sessionId)) {
+    return "device";
+  }
+
+  return undefined;
+};
+
 const makeEnvironmentService = Effect.gen(function* () {
   const db = yield* GatewayDb;
   const secrets = yield* SecretEncryption;
   const config = yield* GatewayRuntimeConfig;
   const client = yield* HttpClient.HttpClient;
   const validationContext = { db, config, client };
+
+  const loadEnvironmentRow = (environmentId: string) =>
+    dbEffect(() =>
+      db.select().from(environments).where(eq(environments.environmentId, environmentId)).get(),
+    );
+
+  const decryptAdminToken = (encryptedToken: Buffer) =>
+    secrets
+      .decrypt(encryptedToken)
+      .pipe(
+        Effect.mapError(
+          (error: SecretEncryptionError) => new DatabaseError({ message: error.message }),
+        ),
+      );
 
   const list = () =>
     Effect.gen(function* () {
@@ -319,6 +359,73 @@ const makeEnvironmentService = Effect.gen(function* () {
       } satisfies ValidateEnvironmentResponse;
     });
 
+  const listClients = (environmentId: string) =>
+    Effect.gen(function* () {
+      const row = yield* loadEnvironmentRow(environmentId);
+
+      if (row === undefined) {
+        return yield* new EnvironmentFailure({ message: "Environment not found" });
+      }
+
+      const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
+      const sessions = yield* listClientSessions(client, row.internalHttpBaseUrl, adminBearerToken);
+      const deviceRows = yield* dbEffect(() =>
+        db
+          .select({ environmentSessionId: deviceSessions.environmentSessionId })
+          .from(deviceSessions)
+          .where(eq(deviceSessions.environmentId, environmentId))
+          .all(),
+      );
+
+      const deviceSessionIds = new Set(
+        deviceRows
+          .map((entry) => entry.environmentSessionId)
+          .filter((id): id is string => id !== null && id !== undefined && id.length > 0),
+      );
+
+      return sessions.map((session) =>
+        Object.assign({}, session, {
+          gatewayRole: resolveGatewayRole(session, row.adminTokenSessionId, deviceSessionIds),
+        }),
+      );
+    });
+
+  const revokeClient = (environmentId: string, sessionId: string) =>
+    Effect.gen(function* () {
+      const trimmedSessionId = sessionId.trim();
+      if (trimmedSessionId.length === 0) {
+        return yield* new EnvironmentFailure({ message: "Client session ID is required" });
+      }
+
+      const row = yield* loadEnvironmentRow(environmentId);
+
+      if (row === undefined) {
+        return yield* new EnvironmentFailure({ message: "Environment not found" });
+      }
+
+      const adminBearerToken = yield* decryptAdminToken(row.adminTokenEncrypted);
+      const result = yield* revokeClientSession(
+        client,
+        row.internalHttpBaseUrl,
+        adminBearerToken,
+        trimmedSessionId,
+      );
+
+      yield* dbEffect(() =>
+        db
+          .delete(deviceSessions)
+          .where(
+            and(
+              eq(deviceSessions.environmentId, environmentId),
+              eq(deviceSessions.environmentSessionId, trimmedSessionId),
+            ),
+          )
+          .run(),
+      );
+
+      return result;
+    });
+
   return EnvironmentService.of({
     list,
     get,
@@ -327,6 +434,8 @@ const makeEnvironmentService = Effect.gen(function* () {
     remove,
     validate,
     validateForEdit,
+    listClients,
+    revokeClient,
   });
 });
 
