@@ -34,7 +34,7 @@ const parseCsv = (value: string) =>
     .filter((entry) => entry.length > 0);
 
 const publicHost = (environment: EnvironmentRecord) =>
-  new URL(stripTrailingSlash(environment.publicHttpBaseUrl)).host;
+  new URL(stripTrailingSlash(environment.publicUrl)).host;
 
 export const buildTraefikDynamicConfig = (
   environments: ReadonlyArray<EnvironmentRecord>,

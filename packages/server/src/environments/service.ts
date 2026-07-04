@@ -27,6 +27,7 @@ import {
   encodeUnknownJson,
 } from "./json-codecs.ts";
 import { validateEnvironmentInput } from "./validation.ts";
+import { computePublicUrls } from "./urls.ts";
 import {
   createBearerTokenForClient,
   createPairingCredential,
@@ -67,7 +68,6 @@ export class EnvironmentService extends Context.Service<
       input: CreateEnvironmentPairingLinkRequest,
     ) => Effect.Effect<EnvironmentPairingLink, EnvironmentFailure | DatabaseError>;
     readonly createT3CodeCatalogEntry: (
-      deviceId: string,
       environmentId: string,
       input: T3CodeCatalogEntryRequest,
     ) => Effect.Effect<T3CodeCatalogEntryResponse, EnvironmentFailure | DatabaseError>;
@@ -78,38 +78,23 @@ export class EnvironmentService extends Context.Service<
   }
 >()("@t3code-gateway/server/environments/service/EnvironmentService") {}
 
-const rowToRecord = (row: EnvironmentRow): EnvironmentRecord => ({
-  environmentId: row.environmentId,
-  slug: row.slug,
-  label: row.label,
-  enabled: row.enabled,
-  endpoint: row.internalHttpBaseUrl,
-  publicHttpBaseUrl: row.publicHttpBaseUrl,
-  publicWsBaseUrl: row.publicWsBaseUrl,
-  descriptor:
-    row.descriptorJson === null || row.descriptorJson === undefined
-      ? undefined
-      : decodeUnknownJson(row.descriptorJson),
-  browserTokenScopes: decodeStringArrayJson(row.browserTokenScopesJson),
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
-  lastHealthStatus: row.lastHealthStatus ?? undefined,
-  lastHealthCheckedAt: row.lastHealthCheckedAt ?? undefined,
-  lastHealthError: row.lastHealthError ?? undefined,
-  lastCatalogSyncStatus: row.lastCatalogSyncStatus ?? undefined,
-  lastCatalogSyncedAt: row.lastCatalogSyncedAt ?? undefined,
-  lastCatalogSyncError: row.lastCatalogSyncError ?? undefined,
-});
-
-const resolveGatewayRole = (
-  session: EnvironmentClientSession,
-  adminTokenSessionId: string | null,
-): EnvironmentClientSession["gatewayRole"] => {
-  if (session.current || session.sessionId === adminTokenSessionId) {
-    return "admin";
-  }
-
-  return undefined;
+const rowToRecord = (row: EnvironmentRow, publicBaseDomain: string): EnvironmentRecord => {
+  const publicUrls = computePublicUrls(row.slug, publicBaseDomain);
+  return {
+    environmentId: row.environmentId,
+    slug: row.slug,
+    label: row.label,
+    enabled: row.enabled,
+    endpoint: row.endpoint,
+    publicUrl: publicUrls.publicHttpBaseUrl,
+    descriptor:
+      row.descriptorJson === null || row.descriptorJson === undefined
+        ? undefined
+        : decodeUnknownJson(row.descriptorJson),
+    browserTokenScopes: decodeStringArrayJson(row.browserTokenScopesJson),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 };
 
 const gatewayConnectionId = (environmentId: string) => `gateway:${environmentId}`;
@@ -145,7 +130,7 @@ const makeEnvironmentService = Effect.gen(function* () {
   const list = () =>
     Effect.gen(function* () {
       const rows = yield* environmentRepository.listEnvironments;
-      return rows.map(rowToRecord);
+      return rows.map((row) => rowToRecord(row, config.publicBaseDomain));
     });
 
   const get = (environmentId: string) =>
@@ -156,7 +141,7 @@ const makeEnvironmentService = Effect.gen(function* () {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
-      return rowToRecord(row);
+      return rowToRecord(row, config.publicBaseDomain);
     });
 
   const create = (input: EnvironmentInput) =>
@@ -177,10 +162,7 @@ const makeEnvironmentService = Effect.gen(function* () {
         slug: validated.slug,
         label: validated.label,
         enabled: true,
-        internalHttpBaseUrl: validated.internalHttpBaseUrl,
-        internalWsBaseUrl: validated.internalWsBaseUrl,
-        publicHttpBaseUrl: validated.publicHttpBaseUrl,
-        publicWsBaseUrl: validated.publicWsBaseUrl,
+        endpoint: validated.endpoint,
         descriptorJson: encodeUnknownJson(validated.descriptor),
         browserTokenScopesJson: encodeStringArrayJson(validated.browserTokenScopes),
         adminTokenEncrypted: encryptedToken,
@@ -207,10 +189,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       let nextValues: {
         slug: string;
         label: string;
-        internalHttpBaseUrl: string;
-        internalWsBaseUrl: string;
-        publicHttpBaseUrl: string;
-        publicWsBaseUrl: string;
+        endpoint: string;
         descriptorJson: string;
         browserTokenScopesJson: string;
         adminTokenEncrypted: Buffer;
@@ -232,7 +211,7 @@ const makeEnvironmentService = Effect.gen(function* () {
           {
             slug: input.slug ?? existing.slug,
             label: input.label ?? existing.label,
-            endpoint: input.endpoint ?? existing.internalHttpBaseUrl,
+            endpoint: input.endpoint ?? existing.endpoint,
             adminBearerToken: input.adminBearerToken ?? decryptedToken,
             browserTokenScopes:
               input.browserTokenScopes ?? decodeStringArrayJson(existing.browserTokenScopesJson),
@@ -258,10 +237,7 @@ const makeEnvironmentService = Effect.gen(function* () {
         nextValues = {
           slug: validated.slug,
           label: validated.label,
-          internalHttpBaseUrl: validated.internalHttpBaseUrl,
-          internalWsBaseUrl: validated.internalWsBaseUrl,
-          publicHttpBaseUrl: validated.publicHttpBaseUrl,
-          publicWsBaseUrl: validated.publicWsBaseUrl,
+          endpoint: validated.endpoint,
           descriptorJson: encodeUnknownJson(validated.descriptor),
           browserTokenScopesJson: encodeStringArrayJson(validated.browserTokenScopes),
           adminTokenEncrypted: encryptedToken,
@@ -271,10 +247,7 @@ const makeEnvironmentService = Effect.gen(function* () {
         nextValues = {
           slug: existing.slug,
           label: input.label ?? existing.label,
-          internalHttpBaseUrl: existing.internalHttpBaseUrl,
-          internalWsBaseUrl: existing.internalWsBaseUrl,
-          publicHttpBaseUrl: existing.publicHttpBaseUrl,
-          publicWsBaseUrl: existing.publicWsBaseUrl,
+          endpoint: existing.endpoint,
           descriptorJson: existing.descriptorJson ?? encodeUnknownJson(null),
           browserTokenScopesJson: encodeStringArrayJson(
             input.browserTokenScopes ?? decodeStringArrayJson(existing.browserTokenScopesJson),
@@ -310,8 +283,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       return {
         environmentId: validated.environmentId,
         descriptor: validated.descriptor,
-        publicHttpBaseUrl: validated.publicHttpBaseUrl,
-        publicWsBaseUrl: validated.publicWsBaseUrl,
+        publicUrl: validated.publicUrl,
       } satisfies ValidateEnvironmentResponse;
     });
 
@@ -336,8 +308,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       return {
         environmentId: validated.environmentId,
         descriptor: validated.descriptor,
-        publicHttpBaseUrl: validated.publicHttpBaseUrl,
-        publicWsBaseUrl: validated.publicWsBaseUrl,
+        publicUrl: validated.publicUrl,
       } satisfies ValidateEnvironmentResponse;
     });
 
@@ -354,11 +325,11 @@ const makeEnvironmentService = Effect.gen(function* () {
         return [];
       }
 
-      const sessions = yield* listClientSessions(client, row.internalHttpBaseUrl, adminBearerToken);
+      const sessions = yield* listClientSessions(client, row.endpoint, adminBearerToken);
 
       return sessions.map((session) =>
         Object.assign({}, session, {
-          gatewayRole: resolveGatewayRole(session, row.adminTokenSessionId),
+          gatewayRole: session.current ? ("admin" as const) : undefined,
         }),
       );
     });
@@ -385,16 +356,17 @@ const makeEnvironmentService = Effect.gen(function* () {
 
       const pairingCode = yield* createPairingCredential(
         client,
-        row.internalHttpBaseUrl,
+        row.endpoint,
         adminBearerToken,
         input,
       );
+      const publicUrls = computePublicUrls(row.slug, config.publicBaseDomain);
 
       return {
         label: input.label,
         scopes: input.scopes,
         pairingCode,
-        pairingUrl: buildPairingUrl(row.publicHttpBaseUrl, pairingCode),
+        pairingUrl: buildPairingUrl(publicUrls.publicHttpBaseUrl, pairingCode),
       } satisfies EnvironmentPairingLink;
     });
 
@@ -418,7 +390,7 @@ const makeEnvironmentService = Effect.gen(function* () {
 
       const bearerToken = yield* createBearerTokenForClient(
         client,
-        row.internalHttpBaseUrl,
+        row.endpoint,
         adminBearerToken,
         {
           label:
@@ -428,6 +400,7 @@ const makeEnvironmentService = Effect.gen(function* () {
           scopes,
         },
       );
+      const publicUrls = computePublicUrls(row.slug, config.publicBaseDomain);
 
       return {
         schemaVersion: 1 as const,
@@ -442,8 +415,8 @@ const makeEnvironmentService = Effect.gen(function* () {
           connectionId: gatewayConnectionId(row.environmentId),
           environmentId: row.environmentId,
           label: row.label,
-          httpBaseUrl: row.publicHttpBaseUrl,
-          wsBaseUrl: row.publicWsBaseUrl,
+          httpBaseUrl: publicUrls.publicHttpBaseUrl,
+          wsBaseUrl: publicUrls.publicWsBaseUrl,
         },
         credential: {
           connectionId: gatewayConnectionId(row.environmentId),
@@ -475,7 +448,7 @@ const makeEnvironmentService = Effect.gen(function* () {
 
       const result = yield* revokeClientSession(
         client,
-        row.internalHttpBaseUrl,
+        row.endpoint,
         adminBearerToken,
         trimmedSessionId,
       );

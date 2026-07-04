@@ -1,4 +1,5 @@
 import type { EnvironmentRecord } from "@t3code-gateway/contracts/schemas";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CopyIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -8,41 +9,24 @@ import { Label } from "../../components/ui/label.tsx";
 import { Popover, PopoverPopup, PopoverTrigger } from "../../components/ui/popover.tsx";
 import { Skeleton } from "../../components/ui/skeleton.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
+import {
+  createT3CodeCatalogEntry,
+  deleteEnvironment,
+  updateEnvironment,
+} from "../../lib/gateway-api.ts";
+import { ENVIRONMENTS_QUERY_KEY } from "./query-keys.ts";
+import { useT3CodeCatalogStore } from "./t3code-catalog-store.ts";
 
 export function EnvironmentTable({
-  deletingEnvironmentId,
   environments,
-  installedT3CodeEnvironmentIds,
-  isDeleting,
-  t3CodeCatalogEnvironmentId,
-  t3CodeClientLabel,
-  isUpdatingEnabled,
-  isUpdatingT3CodeCatalog,
-  onDelete,
   onEdit,
-  onInstallInT3Code,
   onPair,
-  onRememberT3CodeClientLabel,
-  onRemoveFromT3Code,
   onSessions,
-  onToggleEnabled,
 }: Readonly<{
-  deletingEnvironmentId: string | null;
   environments: ReadonlyArray<EnvironmentRecord>;
-  installedT3CodeEnvironmentIds: ReadonlySet<string>;
-  isDeleting: boolean;
-  t3CodeCatalogEnvironmentId: string | null;
-  t3CodeClientLabel: string | null;
-  isUpdatingEnabled: boolean;
-  isUpdatingT3CodeCatalog: boolean;
-  onDelete: (environment: EnvironmentRecord) => void;
   onEdit: (environment: EnvironmentRecord) => void;
-  onInstallInT3Code: (environment: EnvironmentRecord, clientLabel: string) => void;
   onPair: (environment: EnvironmentRecord) => void;
-  onRememberT3CodeClientLabel: (clientLabel: string) => void;
-  onRemoveFromT3Code: (environment: EnvironmentRecord) => void;
   onSessions: (environment: EnvironmentRecord) => void;
-  onToggleEnabled: (environment: EnvironmentRecord, enabled: boolean) => void;
 }>) {
   const [copiedUrlEnvironmentId, setCopiedUrlEnvironmentId] = useState<string | null>(null);
 
@@ -76,17 +60,17 @@ export function EnvironmentTable({
                 <div className="flex min-w-0 items-center gap-1">
                   <a
                     className="min-w-0 [overflow-wrap:anywhere] text-primary hover:underline"
-                    href={environment.publicHttpBaseUrl}
+                    href={environment.publicUrl}
                     rel="noreferrer"
                     target="_blank"
                   >
-                    {environment.publicHttpBaseUrl}
+                    {environment.publicUrl}
                   </a>
                   <CopyUrlButton
                     copied={copiedUrlEnvironmentId === environment.environmentId}
                     label={environment.label}
                     onCopy={() => {
-                      void navigator.clipboard.writeText(environment.publicHttpBaseUrl);
+                      void navigator.clipboard.writeText(environment.publicUrl);
                       setCopiedUrlEnvironmentId(environment.environmentId);
                       window.setTimeout(() => setCopiedUrlEnvironmentId(null), 1200);
                     }}
@@ -94,26 +78,11 @@ export function EnvironmentTable({
                 </div>
               </td>
               <td className="px-2 py-3 text-center">
-                <Switch
-                  checked={environment.enabled}
-                  disabled={isUpdatingEnabled}
-                  onCheckedChange={(checked) => onToggleEnabled(environment, checked)}
-                />
+                <EnvironmentEnabledSwitch environment={environment} />
               </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
-                  <T3CodeCatalogButton
-                    clientLabel={t3CodeClientLabel}
-                    environment={environment}
-                    installed={installedT3CodeEnvironmentIds.has(environment.environmentId)}
-                    isPending={
-                      isUpdatingT3CodeCatalog &&
-                      t3CodeCatalogEnvironmentId === environment.environmentId
-                    }
-                    onInstall={(clientLabel) => onInstallInT3Code(environment, clientLabel)}
-                    onRememberClientLabel={onRememberT3CodeClientLabel}
-                    onRemove={() => onRemoveFromT3Code(environment)}
-                  />
+                  <T3CodeCatalogButton environment={environment} />
                   <Button size="xs" variant="outline" onClick={() => onPair(environment)}>
                     Pair
                   </Button>
@@ -123,16 +92,7 @@ export function EnvironmentTable({
                   <Button size="xs" variant="outline" onClick={() => onEdit(environment)}>
                     Edit
                   </Button>
-                  <Button
-                    size="xs"
-                    variant="destructive-outline"
-                    disabled={isDeleting}
-                    onClick={() => onDelete(environment)}
-                  >
-                    {isDeleting && deletingEnvironmentId === environment.environmentId
-                      ? "Deleting..."
-                      : "Delete"}
-                  </Button>
+                  <DeleteEnvironmentButton environment={environment} />
                 </div>
               </td>
             </tr>
@@ -140,6 +100,63 @@ export function EnvironmentTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function EnvironmentEnabledSwitch({
+  environment,
+}: Readonly<{
+  environment: EnvironmentRecord;
+}>) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (enabled: boolean) => updateEnvironment(environment.environmentId, { enabled }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ENVIRONMENTS_QUERY_KEY });
+    },
+    onError: (cause) => {
+      window.alert(cause instanceof Error ? cause.message : "Update failed");
+    },
+  });
+
+  return (
+    <Switch
+      checked={environment.enabled}
+      disabled={mutation.isPending}
+      onCheckedChange={(checked) => mutation.mutate(checked)}
+    />
+  );
+}
+
+function DeleteEnvironmentButton({
+  environment,
+}: Readonly<{
+  environment: EnvironmentRecord;
+}>) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => deleteEnvironment(environment.environmentId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ENVIRONMENTS_QUERY_KEY });
+    },
+    onError: (cause) => {
+      window.alert(cause instanceof Error ? cause.message : "Delete failed");
+    },
+  });
+
+  return (
+    <Button
+      size="xs"
+      variant="destructive-outline"
+      disabled={mutation.isPending}
+      onClick={() => {
+        if (window.confirm("Remove this environment?")) {
+          mutation.mutate();
+        }
+      }}
+    >
+      {mutation.isPending ? "Deleting..." : "Delete"}
+    </Button>
   );
 }
 
@@ -202,25 +219,37 @@ function EnvironmentTableColumns() {
 }
 
 function T3CodeCatalogButton({
-  clientLabel,
   environment,
-  installed,
-  isPending,
-  onInstall,
-  onRememberClientLabel,
-  onRemove,
 }: Readonly<{
-  clientLabel: string | null;
   environment: EnvironmentRecord;
-  installed: boolean;
-  isPending: boolean;
-  onInstall: (clientLabel: string) => void;
-  onRememberClientLabel: (clientLabel: string) => void;
-  onRemove: () => void;
 }>) {
+  const installedEnvironmentIds = useT3CodeCatalogStore((state) => state.installedEnvironmentIds);
+  const clientLabel = useT3CodeCatalogStore((state) => state.clientLabel);
+  const rememberClientLabel = useT3CodeCatalogStore((state) => state.rememberClientLabel);
+  const installEntry = useT3CodeCatalogStore((state) => state.installEntry);
+  const removeEnvironment = useT3CodeCatalogStore((state) => state.removeEnvironment);
   const [open, setOpen] = useState(false);
   const [editingClientLabel, setEditingClientLabel] = useState(false);
   const [clientLabelInput, setClientLabelInput] = useState(clientLabel ?? "");
+  const installed = installedEnvironmentIds.has(environment.environmentId);
+  const installMutation = useMutation({
+    mutationFn: async (nextClientLabel: string) => {
+      const entry = await createT3CodeCatalogEntry(environment.environmentId, {
+        clientLabel: nextClientLabel,
+      });
+      await installEntry(entry);
+    },
+    onError: (cause) => {
+      window.alert(cause instanceof Error ? cause.message : "Add to web failed");
+    },
+  });
+  const removeMutation = useMutation({
+    mutationFn: () => removeEnvironment(environment.environmentId),
+    onError: (cause) => {
+      window.alert(cause instanceof Error ? cause.message : "Remove from web failed");
+    },
+  });
+  const isPending = installMutation.isPending || removeMutation.isPending;
 
   useEffect(() => {
     if (open) {
@@ -231,15 +260,20 @@ function T3CodeCatalogButton({
 
   if (installed) {
     return (
-      <Button size="xs" variant="outline" disabled={isPending} onClick={onRemove}>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={isPending}
+        onClick={() => removeMutation.mutate()}
+      >
         {isPending ? "Removing..." : "Remove web"}
       </Button>
     );
   }
 
   const rememberAndInstall = (nextClientLabel: string) => {
-    onRememberClientLabel(nextClientLabel);
-    onInstall(nextClientLabel);
+    rememberClientLabel(nextClientLabel);
+    installMutation.mutate(nextClientLabel);
     setOpen(false);
   };
 

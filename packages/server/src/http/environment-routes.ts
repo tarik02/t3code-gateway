@@ -172,25 +172,22 @@ export const layer = Layer.effectDiscard(
       }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
-    yield* router.add(
-      "POST",
-      "/api/gateway/environments/:environmentId/t3code-catalog-entry",
-      () =>
-        Effect.gen(function* () {
-          const params = yield* HttpRouter.params;
-          const environmentId = params.environmentId;
-          if (environmentId === undefined || environmentId.length === 0) {
-            return yield* jsonError("Environment ID is required", 400);
-          }
+    yield* router.add("POST", "/api/gateway/environments/:environmentId/t3code-catalog-entry", () =>
+      Effect.gen(function* () {
+        const params = yield* HttpRouter.params;
+        const environmentId = params.environmentId;
+        if (environmentId === undefined || environmentId.length === 0) {
+          return yield* jsonError("Environment ID is required", 400);
+        }
 
-          const payload = yield* HttpServerRequest.schemaBodyJson(T3CodeCatalogEntryRequest).pipe(
-            Effect.orDie,
-          );
-          const result = yield* environments.createT3CodeCatalogEntry(environmentId, payload);
-          return yield* HttpServerResponse.json(result satisfies T3CodeCatalogEntryResponse).pipe(
-            Effect.orDie,
-          );
-        }).pipe(Effect.catchTags(environmentRouteErrors)),
+        const payload = yield* HttpServerRequest.schemaBodyJson(T3CodeCatalogEntryRequest).pipe(
+          Effect.orDie,
+        );
+        const result = yield* environments.createT3CodeCatalogEntry(environmentId, payload);
+        return yield* HttpServerResponse.json(result satisfies T3CodeCatalogEntryResponse).pipe(
+          Effect.orDie,
+        );
+      }).pipe(Effect.catchTags(environmentRouteErrors)),
     );
 
     yield* router.add(

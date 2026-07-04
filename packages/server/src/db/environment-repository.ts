@@ -5,29 +5,19 @@ import * as Layer from "effect/Layer";
 
 import { GatewayDatabase } from "./database.ts";
 import { DatabaseError, queryError } from "./errors.ts";
-import { deviceSessions, environments } from "./schema.ts";
+import { environments } from "./schema.ts";
 
 export interface EnvironmentRow {
   readonly environmentId: string;
   readonly slug: string;
   readonly label: string;
   readonly enabled: boolean;
-  readonly internalHttpBaseUrl: string;
-  readonly internalWsBaseUrl: string;
-  readonly publicHttpBaseUrl: string;
-  readonly publicWsBaseUrl: string;
+  readonly endpoint: string;
   readonly descriptorJson: string | null;
   readonly browserTokenScopesJson: string;
   readonly adminTokenEncrypted: Buffer;
-  readonly adminTokenSessionId: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
-  readonly lastHealthStatus: string | null;
-  readonly lastHealthCheckedAt: string | null;
-  readonly lastHealthError: string | null;
-  readonly lastCatalogSyncStatus: string | null;
-  readonly lastCatalogSyncedAt: string | null;
-  readonly lastCatalogSyncError: string | null;
 }
 
 export interface CreateEnvironmentInput {
@@ -35,10 +25,7 @@ export interface CreateEnvironmentInput {
   readonly slug: string;
   readonly label: string;
   readonly enabled: boolean;
-  readonly internalHttpBaseUrl: string;
-  readonly internalWsBaseUrl: string;
-  readonly publicHttpBaseUrl: string;
-  readonly publicWsBaseUrl: string;
+  readonly endpoint: string;
   readonly descriptorJson: string;
   readonly browserTokenScopesJson: string;
   readonly adminTokenEncrypted: Buffer;
@@ -49,25 +36,11 @@ export interface CreateEnvironmentInput {
 export interface UpdateEnvironmentInput {
   readonly slug: string;
   readonly label: string;
-  readonly internalHttpBaseUrl: string;
-  readonly internalWsBaseUrl: string;
-  readonly publicHttpBaseUrl: string;
-  readonly publicWsBaseUrl: string;
+  readonly endpoint: string;
   readonly descriptorJson: string;
   readonly browserTokenScopesJson: string;
   readonly adminTokenEncrypted: Buffer;
   readonly enabled: boolean;
-  readonly updatedAt: string;
-}
-
-export interface UpsertDeviceSessionInput {
-  readonly id: string;
-  readonly deviceId: string;
-  readonly environmentId: string;
-  readonly bearerTokenEncrypted: Buffer;
-  readonly scopesJson: string;
-  readonly expiresAt: string;
-  readonly createdAt: string;
   readonly updatedAt: string;
 }
 
@@ -93,16 +66,6 @@ export class EnvironmentRepository extends Context.Service<
       environmentId: string,
       excludeEnvironmentId: string | undefined,
     ) => Effect.Effect<string | undefined, DatabaseError>;
-    readonly listEnvironmentSessionIds: (
-      environmentId: string,
-    ) => Effect.Effect<ReadonlyArray<string>, DatabaseError>;
-    readonly deleteDeviceSessionByEnvironmentSession: (
-      environmentId: string,
-      sessionId: string,
-    ) => Effect.Effect<void, DatabaseError>;
-    readonly upsertDeviceSession: (
-      input: UpsertDeviceSessionInput,
-    ) => Effect.Effect<void, DatabaseError>;
   }
 >()("@t3code-gateway/server/db/environment-repository/EnvironmentRepository") {}
 
@@ -177,51 +140,6 @@ export const make = Effect.gen(function* () {
         Effect.catchTags(queryError("environment")),
       );
 
-  const listEnvironmentSessionIds = (environmentId: string) =>
-    db
-      .select({ environmentSessionId: deviceSessions.environmentSessionId })
-      .from(deviceSessions)
-      .where(eq(deviceSessions.environmentId, environmentId))
-      .all()
-      .pipe(
-        Effect.map((rows) =>
-          rows.flatMap((entry) =>
-            entry.environmentSessionId === null || entry.environmentSessionId.length === 0
-              ? []
-              : [entry.environmentSessionId],
-          ),
-        ),
-        Effect.catchTags(queryError("deviceSession")),
-      );
-
-  const deleteDeviceSessionByEnvironmentSession = (environmentId: string, sessionId: string) =>
-    db
-      .delete(deviceSessions)
-      .where(
-        and(
-          eq(deviceSessions.environmentId, environmentId),
-          eq(deviceSessions.environmentSessionId, sessionId),
-        ),
-      )
-      .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("deviceSession")));
-
-  const upsertDeviceSession = (input: UpsertDeviceSessionInput) =>
-    db
-      .insert(deviceSessions)
-      .values(input)
-      .onConflictDoUpdate({
-        target: [deviceSessions.deviceId, deviceSessions.environmentId],
-        set: {
-          bearerTokenEncrypted: input.bearerTokenEncrypted,
-          scopesJson: input.scopesJson,
-          expiresAt: input.expiresAt,
-          updatedAt: input.updatedAt,
-        },
-      })
-      .run()
-      .pipe(Effect.asVoid, Effect.catchTags(queryError("deviceSession")));
-
   return EnvironmentRepository.of({
     listEnvironments,
     findEnvironment,
@@ -230,9 +148,6 @@ export const make = Effect.gen(function* () {
     deleteEnvironment,
     findEnvironmentIdBySlug,
     findConflictingEnvironmentId,
-    listEnvironmentSessionIds,
-    deleteDeviceSessionByEnvironmentSession,
-    upsertDeviceSession,
   });
 });
 

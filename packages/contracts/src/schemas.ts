@@ -123,18 +123,11 @@ export const EnvironmentRecord = Schema.Struct({
   label: Schema.String,
   enabled: Schema.Boolean,
   endpoint: Schema.String,
-  publicHttpBaseUrl: Schema.String,
-  publicWsBaseUrl: Schema.String,
+  publicUrl: Schema.String,
   descriptor: Schema.optional(Schema.Unknown),
   browserTokenScopes: Schema.Array(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.String,
-  lastHealthStatus: Schema.optional(Schema.String),
-  lastHealthCheckedAt: Schema.optional(Schema.String),
-  lastHealthError: Schema.optional(Schema.String),
-  lastCatalogSyncStatus: Schema.optional(Schema.String),
-  lastCatalogSyncedAt: Schema.optional(Schema.String),
-  lastCatalogSyncError: Schema.optional(Schema.String),
 });
 
 export type EnvironmentRecord = typeof EnvironmentRecord.Type;
@@ -166,8 +159,7 @@ export class EnvironmentFailure extends Schema.TaggedErrorClass<EnvironmentFailu
 export const ValidateEnvironmentResponse = Schema.Struct({
   environmentId: Schema.String,
   descriptor: Schema.Unknown,
-  publicHttpBaseUrl: Schema.String,
-  publicWsBaseUrl: Schema.String,
+  publicUrl: Schema.String,
 });
 
 export type ValidateEnvironmentResponse = typeof ValidateEnvironmentResponse.Type;
@@ -208,7 +200,7 @@ export const EnvironmentClientSessionMethod = Schema.Literals([
 
 export type EnvironmentClientSessionMethod = typeof EnvironmentClientSessionMethod.Type;
 
-export const EnvironmentClientGatewayRole = Schema.Literals(["admin", "device"]);
+export const EnvironmentClientGatewayRole = Schema.Literals(["admin"]);
 
 export type EnvironmentClientGatewayRole = typeof EnvironmentClientGatewayRole.Type;
 
