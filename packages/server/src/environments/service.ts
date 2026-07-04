@@ -11,7 +11,6 @@ import type {
   ValidateEnvironmentResponse,
 } from "@t3code-gateway/contracts/schemas";
 import { EnvironmentFailure } from "@t3code-gateway/contracts/schemas";
-import { and, eq } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -19,9 +18,8 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 
 import { SecretEncryption, SecretEncryptionError } from "../crypto/secret-encryption.ts";
 import { GatewayRuntimeConfig } from "../config.ts";
-import { GatewayDb } from "../db/client.ts";
-import { deviceSessions, environments } from "../db/schema.ts";
-import { DatabaseError } from "./errors.ts";
+import { EnvironmentRepository, type EnvironmentRow } from "../db/environment-repository.ts";
+import { DatabaseError } from "../db/errors.ts";
 import {
   decodeStringArrayJson,
   decodeUnknownJson,
@@ -36,8 +34,6 @@ import {
   revokeClientSession,
 } from "./t3code-client.ts";
 import * as Layer from "effect/Layer";
-
-type EnvironmentRow = typeof environments.$inferSelect;
 
 export class EnvironmentService extends Context.Service<
   EnvironmentService,
@@ -82,17 +78,6 @@ export class EnvironmentService extends Context.Service<
   }
 >()("@t3code-gateway/server/environments/service/EnvironmentService") {}
 
-const nowIso = () => DateTime.formatIso(DateTime.nowUnsafe());
-
-const dbEffect = <A>(run: () => A) =>
-  Effect.try({
-    try: run,
-    catch: (cause) =>
-      new DatabaseError({
-        message: cause instanceof Error ? cause.message : "Database operation failed",
-      }),
-  });
-
 const rowToRecord = (row: EnvironmentRow): EnvironmentRecord => ({
   environmentId: row.environmentId,
   slug: row.slug,
@@ -119,23 +104,15 @@ const rowToRecord = (row: EnvironmentRow): EnvironmentRecord => ({
 const resolveGatewayRole = (
   session: EnvironmentClientSession,
   adminTokenSessionId: string | null,
-  deviceSessionIds: ReadonlySet<string>,
 ): EnvironmentClientSession["gatewayRole"] => {
   if (session.current || session.sessionId === adminTokenSessionId) {
     return "admin";
-  }
-
-  if (deviceSessionIds.has(session.sessionId)) {
-    return "device";
   }
 
   return undefined;
 };
 
 const gatewayConnectionId = (environmentId: string) => `gateway:${environmentId}`;
-
-const expiresAtFromNow = (expiresInSeconds: number) =>
-  DateTime.formatIso(DateTime.add(DateTime.nowUnsafe(), { seconds: expiresInSeconds }));
 
 const buildPairingUrl = (publicHttpBaseUrl: string, credential: string) => {
   const url = new URL(publicHttpBaseUrl);
@@ -146,37 +123,34 @@ const buildPairingUrl = (publicHttpBaseUrl: string, credential: string) => {
 };
 
 const makeEnvironmentService = Effect.gen(function* () {
-  const db = yield* GatewayDb;
+  const environmentRepository = yield* EnvironmentRepository;
   const secrets = yield* SecretEncryption;
   const config = yield* GatewayRuntimeConfig;
   const client = yield* HttpClient.HttpClient;
-  const validationContext = { db, config, client };
+  const validationContext = { environmentRepository, config, client };
 
   const loadEnvironmentRow = (environmentId: string) =>
-    dbEffect(() =>
-      db.select().from(environments).where(eq(environments.environmentId, environmentId)).get(),
-    );
+    environmentRepository.findEnvironment(environmentId);
 
   const decryptAdminToken = (encryptedToken: Buffer) =>
     secrets
       .decrypt(encryptedToken)
       .pipe(
         Effect.mapError(
-          (error: SecretEncryptionError) => new DatabaseError({ message: error.message }),
+          (error: SecretEncryptionError) =>
+            new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
         ),
       );
 
   const list = () =>
     Effect.gen(function* () {
-      const rows = yield* dbEffect(() => db.select().from(environments).all());
+      const rows = yield* environmentRepository.listEnvironments;
       return rows.map(rowToRecord);
     });
 
   const get = (environmentId: string) =>
     Effect.gen(function* () {
-      const row = yield* dbEffect(() =>
-        db.select().from(environments).where(eq(environments.environmentId, environmentId)).get(),
-      );
+      const row = yield* environmentRepository.findEnvironment(environmentId);
 
       if (row === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
@@ -190,38 +164,36 @@ const makeEnvironmentService = Effect.gen(function* () {
       const validated = yield* validateEnvironmentInput(validationContext, input);
       const encryptedToken = yield* secrets
         .encrypt(validated.adminBearerToken)
-        .pipe(Effect.mapError((error) => new DatabaseError({ message: error.message })));
-      const timestamp = nowIso();
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
+          ),
+        );
+      const timestamp = DateTime.formatIso(DateTime.nowUnsafe());
 
-      yield* dbEffect(() =>
-        db
-          .insert(environments)
-          .values({
-            environmentId: validated.environmentId,
-            slug: validated.slug,
-            label: validated.label,
-            enabled: true,
-            internalHttpBaseUrl: validated.internalHttpBaseUrl,
-            internalWsBaseUrl: validated.internalWsBaseUrl,
-            publicHttpBaseUrl: validated.publicHttpBaseUrl,
-            publicWsBaseUrl: validated.publicWsBaseUrl,
-            descriptorJson: encodeUnknownJson(validated.descriptor),
-            browserTokenScopesJson: encodeStringArrayJson(validated.browserTokenScopes),
-            adminTokenEncrypted: encryptedToken,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          })
-          .run(),
-      );
+      yield* environmentRepository.createEnvironment({
+        environmentId: validated.environmentId,
+        slug: validated.slug,
+        label: validated.label,
+        enabled: true,
+        internalHttpBaseUrl: validated.internalHttpBaseUrl,
+        internalWsBaseUrl: validated.internalWsBaseUrl,
+        publicHttpBaseUrl: validated.publicHttpBaseUrl,
+        publicWsBaseUrl: validated.publicWsBaseUrl,
+        descriptorJson: encodeUnknownJson(validated.descriptor),
+        browserTokenScopesJson: encodeStringArrayJson(validated.browserTokenScopes),
+        adminTokenEncrypted: encryptedToken,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
 
       return yield* get(validated.environmentId);
     });
 
   const update = (environmentId: string, input: UpdateEnvironmentRequest) =>
     Effect.gen(function* () {
-      const existing = yield* dbEffect(() =>
-        db.select().from(environments).where(eq(environments.environmentId, environmentId)).get(),
-      );
+      const existing = yield* environmentRepository.findEnvironment(environmentId);
 
       if (existing === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
@@ -250,7 +222,8 @@ const makeEnvironmentService = Effect.gen(function* () {
           .decrypt(existing.adminTokenEncrypted)
           .pipe(
             Effect.mapError(
-              (error: SecretEncryptionError) => new DatabaseError({ message: error.message }),
+              (error: SecretEncryptionError) =>
+                new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
             ),
           );
 
@@ -277,7 +250,8 @@ const makeEnvironmentService = Effect.gen(function* () {
           .encrypt(validated.adminBearerToken)
           .pipe(
             Effect.mapError(
-              (error: SecretEncryptionError) => new DatabaseError({ message: error.message }),
+              (error: SecretEncryptionError) =>
+                new DatabaseError({ operation: "environment", reason: "unknown", cause: error }),
             ),
           );
 
@@ -310,38 +284,24 @@ const makeEnvironmentService = Effect.gen(function* () {
         };
       }
 
-      const timestamp = nowIso();
-      yield* dbEffect(() =>
-        db
-          .update(environments)
-          .set({
-            ...nextValues,
-            updatedAt: timestamp,
-          })
-          .where(eq(environments.environmentId, environmentId))
-          .run(),
-      );
+      const timestamp = DateTime.formatIso(DateTime.nowUnsafe());
+      yield* environmentRepository.updateEnvironment(environmentId, {
+        ...nextValues,
+        updatedAt: timestamp,
+      });
 
       return yield* get(environmentId);
     });
 
   const remove = (environmentId: string) =>
     Effect.gen(function* () {
-      const existing = yield* dbEffect(() =>
-        db
-          .select({ environmentId: environments.environmentId })
-          .from(environments)
-          .where(eq(environments.environmentId, environmentId))
-          .get(),
-      );
+      const existing = yield* environmentRepository.findEnvironment(environmentId);
 
       if (existing === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
       }
 
-      yield* dbEffect(() =>
-        db.delete(environments).where(eq(environments.environmentId, environmentId)).run(),
-      );
+      yield* environmentRepository.deleteEnvironment(environmentId);
     });
 
   const validate = (input: EnvironmentInput) =>
@@ -357,13 +317,7 @@ const makeEnvironmentService = Effect.gen(function* () {
 
   const validateForEdit = (environmentId: string, input: EnvironmentInput) =>
     Effect.gen(function* () {
-      const existing = yield* dbEffect(() =>
-        db
-          .select({ environmentId: environments.environmentId })
-          .from(environments)
-          .where(eq(environments.environmentId, environmentId))
-          .get(),
-      );
+      const existing = yield* environmentRepository.findEnvironment(environmentId);
 
       if (existing === undefined) {
         return yield* new EnvironmentFailure({ message: "Environment not found", status: 404 });
@@ -401,23 +355,10 @@ const makeEnvironmentService = Effect.gen(function* () {
       }
 
       const sessions = yield* listClientSessions(client, row.internalHttpBaseUrl, adminBearerToken);
-      const deviceRows = yield* dbEffect(() =>
-        db
-          .select({ environmentSessionId: deviceSessions.environmentSessionId })
-          .from(deviceSessions)
-          .where(eq(deviceSessions.environmentId, environmentId))
-          .all(),
-      );
-
-      const deviceSessionIds = new Set(
-        deviceRows
-          .map((entry) => entry.environmentSessionId)
-          .filter((id): id is string => id !== null && id !== undefined && id.length > 0),
-      );
 
       return sessions.map((session) =>
         Object.assign({}, session, {
-          gatewayRole: resolveGatewayRole(session, row.adminTokenSessionId, deviceSessionIds),
+          gatewayRole: resolveGatewayRole(session, row.adminTokenSessionId),
         }),
       );
     });
@@ -457,11 +398,7 @@ const makeEnvironmentService = Effect.gen(function* () {
       } satisfies EnvironmentPairingLink;
     });
 
-  const createT3CodeCatalogEntry = (
-    deviceId: string,
-    environmentId: string,
-    input: T3CodeCatalogEntryRequest,
-  ) =>
+  const createT3CodeCatalogEntry = (environmentId: string, input: T3CodeCatalogEntryRequest) =>
     Effect.gen(function* () {
       const row = yield* loadEnvironmentRow(environmentId);
 
@@ -490,36 +427,6 @@ const makeEnvironmentService = Effect.gen(function* () {
               : input.clientLabel,
           scopes,
         },
-      );
-      const encryptedToken = yield* secrets
-        .encrypt(bearerToken.accessToken)
-        .pipe(Effect.mapError((error) => new DatabaseError({ message: error.message })));
-      const timestamp = nowIso();
-      const expiresAt = expiresAtFromNow(bearerToken.expiresInSeconds);
-
-      yield* dbEffect(() =>
-        db
-          .insert(deviceSessions)
-          .values({
-            id: `${deviceId}:${row.environmentId}`,
-            deviceId,
-            environmentId: row.environmentId,
-            bearerTokenEncrypted: encryptedToken,
-            scopesJson: encodeStringArrayJson(scopes),
-            expiresAt,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          })
-          .onConflictDoUpdate({
-            target: [deviceSessions.deviceId, deviceSessions.environmentId],
-            set: {
-              bearerTokenEncrypted: encryptedToken,
-              scopesJson: encodeStringArrayJson(scopes),
-              expiresAt,
-              updatedAt: timestamp,
-            },
-          })
-          .run(),
       );
 
       return {
@@ -573,21 +480,8 @@ const makeEnvironmentService = Effect.gen(function* () {
         trimmedSessionId,
       );
 
-      yield* dbEffect(() =>
-        db
-          .delete(deviceSessions)
-          .where(
-            and(
-              eq(deviceSessions.environmentId, environmentId),
-              eq(deviceSessions.environmentSessionId, trimmedSessionId),
-            ),
-          )
-          .run(),
-      );
-
       return result;
     });
-
   return EnvironmentService.of({
     list,
     get,

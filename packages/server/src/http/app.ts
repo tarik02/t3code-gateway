@@ -15,9 +15,10 @@ import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import { AuthService } from "../auth/service.ts";
 import { layer as secretEncryptionLayer } from "../crypto/secret-encryption.ts";
 import { configLayer, GatewayRuntimeConfig } from "../config.ts";
+import { GatewayDatabase, layer as gatewayDatabaseLayer } from "../db/database.ts";
+import { layer as authRepositoryLayer } from "../db/auth-repository.ts";
+import { layer as environmentRepositoryLayer } from "../db/environment-repository.ts";
 import { layer as environmentServiceLayer } from "../environments/service.ts";
-import { layer as gatewayDbLayer } from "../db/client.ts";
-import { ensureDatabaseDirectory, runMigrations } from "../db/migrate.ts";
 import { layer as adminWebRoutesLayer } from "./admin-web-routes.ts";
 import { layer as authRoutesLayer } from "./auth-routes.ts";
 import { layer as environmentRoutesLayer } from "./environment-routes.ts";
@@ -36,16 +37,25 @@ const foundationLayer = Layer.mergeAll(
   NodeServices.layer,
 );
 
-const dataLayer = gatewayDbLayer.pipe(Layer.provide(foundationLayer));
+const databaseLiveLayer = gatewayDatabaseLayer.pipe(Layer.provide(foundationLayer));
 
-const authLiveLayer = authLayer.pipe(Layer.provide(dataLayer), Layer.provide(foundationLayer));
+const authRepositoryLiveLayer = authRepositoryLayer.pipe(Layer.provide(databaseLiveLayer));
+
+const environmentRepositoryLiveLayer = environmentRepositoryLayer.pipe(
+  Layer.provide(databaseLiveLayer),
+);
+
+const authLiveLayer = authLayer.pipe(
+  Layer.provide(authRepositoryLiveLayer),
+  Layer.provide(foundationLayer),
+);
 
 const secretLiveLayer = secretEncryptionLayer.pipe(Layer.provide(foundationLayer));
 
 const environmentLiveLayer = environmentServiceLayer.pipe(
   Layer.provide(secretLiveLayer),
   Layer.provide(NodeHttpClient.layerFetch),
-  Layer.provide(dataLayer),
+  Layer.provide(environmentRepositoryLiveLayer),
   Layer.provide(foundationLayer),
 );
 
@@ -56,8 +66,8 @@ const traefikLiveLayer = traefikReconcilerLayer.pipe(
 
 const bootstrapLayer = Layer.effectDiscard(
   Effect.gen(function* () {
-    yield* ensureDatabaseDirectory;
-    yield* runMigrations;
+    const database = yield* GatewayDatabase;
+    yield* database.runMigrations;
     const auth = yield* AuthService;
     yield* auth.bootstrapFirstUser();
     const traefik = yield* TraefikReconciler;
@@ -83,7 +93,9 @@ const routesLayer = Layer.mergeAll(
   Layer.provideMerge(traefikLiveLayer),
   Layer.provideMerge(environmentLiveLayer),
   Layer.provideMerge(authLiveLayer),
-  Layer.provideMerge(dataLayer),
+  Layer.provideMerge(environmentRepositoryLiveLayer),
+  Layer.provideMerge(authRepositoryLiveLayer),
+  Layer.provideMerge(databaseLiveLayer),
   Layer.provideMerge(foundationLayer),
 );
 
@@ -145,7 +157,9 @@ const serveLayer = HttpRouter.serve(gatewayAppLayer, {
 export const runtimeLayer = serveLayer.pipe(
   Layer.provide(serverLayer),
   Layer.provideMerge(foundationLayer),
-  Layer.provideMerge(dataLayer),
+  Layer.provideMerge(databaseLiveLayer),
+  Layer.provideMerge(authRepositoryLiveLayer),
+  Layer.provideMerge(environmentRepositoryLiveLayer),
   Layer.provideMerge(authLiveLayer),
   Layer.provideMerge(environmentLiveLayer),
   Layer.provideMerge(traefikLiveLayer),

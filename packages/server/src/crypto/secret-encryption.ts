@@ -3,14 +3,23 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import * as Schema from "effect/Schema";
 
 import { GatewayRuntimeConfig } from "../config.ts";
+import { GatewayCrypto, GatewayCryptoError } from "./gateway-crypto.ts";
 
-const ALGORITHM = "aes-256-gcm";
 const KEY_LENGTH = 32;
 const NONCE_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
+
+const SecretEncryptionOperation = Schema.Literals(["loadKey", "encrypt", "decrypt"]);
+const SecretEncryptionFailureReason = Schema.Literals([
+  "cipherFailed",
+  "invalidKeyLength",
+  "missingKeyFile",
+  "payloadTooShort",
+  "readKeyFile",
+]);
 
 export class SecretEncryption extends Context.Service<
   SecretEncryption,
@@ -20,60 +29,65 @@ export class SecretEncryption extends Context.Service<
   }
 >()("@t3code-gateway/server/crypto/secret-encryption/SecretEncryption") {}
 
-export class SecretEncryptionError extends Error {
-  readonly _tag = "SecretEncryptionError";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "SecretEncryptionError";
+export class SecretEncryptionError extends Schema.TaggedErrorClass<SecretEncryptionError>()(
+  "SecretEncryptionError",
+  {
+    operation: SecretEncryptionOperation,
+    reason: SecretEncryptionFailureReason,
+    path: Schema.optionalKey(Schema.String),
+    expectedBytes: Schema.optionalKey(Schema.Number),
+    actualBytes: Schema.optionalKey(Schema.Number),
+    cause: Schema.optionalKey(Schema.Unknown),
+  },
+) {
+  override get message() {
+    if (this.reason === "missingKeyFile") {
+      return "T3_GATEWAY_SECRET_KEY_FILE is required for token encryption";
+    }
+    if (this.reason === "invalidKeyLength") {
+      return `Secret key file must contain exactly ${this.expectedBytes} bytes, got ${this.actualBytes}`;
+    }
+    if (this.reason === "readKeyFile") {
+      return "Failed to read secret key file";
+    }
+    if (this.reason === "payloadTooShort") {
+      return "Encrypted payload is too short";
+    }
+    if (this.operation === "decrypt") {
+      return "Decryption failed";
+    }
+    return "Encryption failed";
   }
 }
-
-const encryptWithKey = (plaintext: string, key: Buffer): Buffer => {
-  const nonce = randomBytes(NONCE_LENGTH);
-  const cipher = createCipheriv(ALGORITHM, key, nonce);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return Buffer.concat([nonce, encrypted, tag]);
-};
-
-const decryptWithKey = (blob: Buffer, key: Buffer): string => {
-  if (blob.length < NONCE_LENGTH + AUTH_TAG_LENGTH) {
-    throw new SecretEncryptionError("Encrypted payload is too short");
-  }
-
-  const nonce = blob.subarray(0, NONCE_LENGTH);
-  const tag = blob.subarray(blob.length - AUTH_TAG_LENGTH);
-  const ciphertext = blob.subarray(NONCE_LENGTH, blob.length - AUTH_TAG_LENGTH);
-  const decipher = createDecipheriv(ALGORITHM, key, nonce);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
-};
 
 const loadMasterKey = Effect.gen(function* () {
   const config = yield* GatewayRuntimeConfig;
   const keyFile = Option.getOrUndefined(config.secretKeyFile);
   if (keyFile === undefined) {
-    return yield* Effect.fail(
-      new SecretEncryptionError("T3_GATEWAY_SECRET_KEY_FILE is required for token encryption"),
-    );
+    return yield* new SecretEncryptionError({ operation: "loadKey", reason: "missingKeyFile" });
   }
 
   const fs = yield* FileSystem.FileSystem;
-  const keyBytes = yield* fs
-    .readFile(keyFile)
-    .pipe(
-      Effect.mapError(
-        (error) => new SecretEncryptionError(`Failed to read secret key file: ${error.message}`),
-      ),
-    );
+  const keyBytes = yield* fs.readFile(keyFile).pipe(
+    Effect.mapError(
+      (error) =>
+        new SecretEncryptionError({
+          operation: "loadKey",
+          reason: "readKeyFile",
+          path: keyFile,
+          cause: error,
+        }),
+    ),
+  );
 
   if (keyBytes.length !== KEY_LENGTH) {
-    return yield* Effect.fail(
-      new SecretEncryptionError(
-        `Secret key file must contain exactly ${KEY_LENGTH} bytes, got ${keyBytes.length}`,
-      ),
-    );
+    return yield* new SecretEncryptionError({
+      operation: "loadKey",
+      reason: "invalidKeyLength",
+      path: keyFile,
+      expectedBytes: KEY_LENGTH,
+      actualBytes: keyBytes.length,
+    });
   }
 
   return Buffer.from(keyBytes);
@@ -83,19 +97,59 @@ export const layer = Layer.effect(
   SecretEncryption,
   Effect.gen(function* () {
     const key = yield* loadMasterKey;
+    const crypto = yield* GatewayCrypto;
+    const textEncoder = new TextEncoder();
+    const textDecoder = new TextDecoder();
 
     return SecretEncryption.of({
       encrypt: (plaintext) =>
-        Effect.try({
-          try: () => encryptWithKey(plaintext, key),
-          catch: (cause) =>
-            new SecretEncryptionError(cause instanceof Error ? cause.message : "Encryption failed"),
-        }),
+        Effect.gen(function* () {
+          const nonce = yield* crypto.randomBytes(NONCE_LENGTH);
+          const ciphertextWithTag = yield* crypto.aes256GcmEncrypt({
+            key,
+            nonce,
+            plaintext: textEncoder.encode(plaintext),
+          });
+          return Buffer.concat([Buffer.from(nonce), Buffer.from(ciphertextWithTag)]);
+        }).pipe(
+          Effect.mapError(
+            (error: GatewayCryptoError) =>
+              new SecretEncryptionError({
+                operation: "encrypt",
+                reason: "cipherFailed",
+                cause: error,
+              }),
+          ),
+        ),
       decrypt: (ciphertext) =>
-        Effect.try({
-          try: () => decryptWithKey(ciphertext, key),
-          catch: (cause) =>
-            new SecretEncryptionError(cause instanceof Error ? cause.message : "Decryption failed"),
+        Effect.gen(function* () {
+          if (ciphertext.length < NONCE_LENGTH + AUTH_TAG_LENGTH) {
+            return yield* new SecretEncryptionError({
+              operation: "decrypt",
+              reason: "payloadTooShort",
+              actualBytes: ciphertext.length,
+            });
+          }
+
+          const nonce = ciphertext.subarray(0, NONCE_LENGTH);
+          const ciphertextWithTag = ciphertext.subarray(NONCE_LENGTH);
+          const plaintext = yield* crypto
+            .aes256GcmDecrypt({
+              key,
+              nonce,
+              ciphertextWithTag,
+            })
+            .pipe(
+              Effect.mapError(
+                (error: GatewayCryptoError) =>
+                  new SecretEncryptionError({
+                    operation: "decrypt",
+                    reason: "cipherFailed",
+                    cause: error,
+                  }),
+              ),
+            );
+          return textDecoder.decode(plaintext);
         }),
     });
   }),

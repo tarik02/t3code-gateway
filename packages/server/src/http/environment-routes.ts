@@ -17,11 +17,9 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
-import { DatabaseError } from "../environments/errors.ts";
+import { DatabaseError } from "../db/errors.ts";
 import { EnvironmentService } from "../environments/service.ts";
 import { TraefikReconciler } from "../traefik/reconciler.ts";
-import { hashSessionToken } from "../auth/session.ts";
-import { readSessionToken } from "./cookies.ts";
 
 const jsonError = (message: string, status: number) =>
   HttpServerResponse.json({ error: message }).pipe(
@@ -177,7 +175,7 @@ export const layer = Layer.effectDiscard(
     yield* router.add(
       "POST",
       "/api/gateway/environments/:environmentId/t3code-catalog-entry",
-      (request) =>
+      () =>
         Effect.gen(function* () {
           const params = yield* HttpRouter.params;
           const environmentId = params.environmentId;
@@ -185,20 +183,10 @@ export const layer = Layer.effectDiscard(
             return yield* jsonError("Environment ID is required", 400);
           }
 
-          const sessionToken = readSessionToken(request.cookies);
-          if (sessionToken === undefined) {
-            return yield* jsonError("Authentication required", 401);
-          }
-
           const payload = yield* HttpServerRequest.schemaBodyJson(T3CodeCatalogEntryRequest).pipe(
             Effect.orDie,
           );
-          const deviceId = yield* hashSessionToken(sessionToken);
-          const result = yield* environments.createT3CodeCatalogEntry(
-            deviceId,
-            environmentId,
-            payload,
-          );
+          const result = yield* environments.createT3CodeCatalogEntry(environmentId, payload);
           return yield* HttpServerResponse.json(result satisfies T3CodeCatalogEntryResponse).pipe(
             Effect.orDie,
           );

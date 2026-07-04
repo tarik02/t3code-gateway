@@ -1,8 +1,9 @@
 import type { EnvironmentRecord, TraefikConfigResponse } from "@t3code-gateway/contracts/schemas";
-import { createHash } from "node:crypto";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -23,11 +24,36 @@ export class TraefikReconciler extends Context.Service<
   }
 >()("@t3code-gateway/server/traefik/reconciler/TraefikReconciler") {}
 
-const hashContent = (content: string) => createHash("sha256").update(content).digest("hex");
+const traefikWriteFailureReason = (error: { readonly reason: { readonly _tag: string } }) => {
+  const tag = error.reason["_tag"];
+  if (tag === "AlreadyExists") {
+    return "alreadyExists";
+  }
+  if (tag === "BadArgument" || tag === "BadResource") {
+    return "badArgument";
+  }
+  if (tag === "Busy") {
+    return "busy";
+  }
+  if (tag === "InvalidData") {
+    return "invalidData";
+  }
+  if (tag === "NotFound") {
+    return "notFound";
+  }
+  if (tag === "PermissionDenied") {
+    return "permissionDenied";
+  }
+  if (tag === "TimedOut") {
+    return "timeout";
+  }
+  return "unknown";
+};
 
 const makeTraefikReconciler = Effect.gen(function* () {
   const config = yield* GatewayRuntimeConfig;
   const environments = yield* EnvironmentService;
+  const crypto = yield* Crypto.Crypto;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const lock = yield* Semaphore.make(1);
@@ -37,8 +63,16 @@ const makeTraefikReconciler = Effect.gen(function* () {
     Effect.gen(function* () {
       const content = yield* fs
         .readFileString(filePath)
-        .pipe(Effect.catchTag("PlatformError", () => Effect.succeed(null)));
-      return content === null ? undefined : hashContent(content);
+        .pipe(
+          Effect.catchTag("PlatformError", (error) =>
+            error.reason["_tag"] === "NotFound" ? Effect.succeed(null) : Effect.fail(error),
+          ),
+        );
+      if (content === null) {
+        return undefined;
+      }
+      const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(content));
+      return Encoding.encodeHex(digest);
     });
 
   const writeAtomic = (targetPath: string, content: string) =>
@@ -56,7 +90,9 @@ const makeTraefikReconciler = Effect.gen(function* () {
       Effect.mapError(
         (error) =>
           new TraefikWriteError({
-            message: error.message,
+            reason: traefikWriteFailureReason(error),
+            path: targetPath,
+            cause: error,
           }),
       ),
     );
@@ -89,7 +125,9 @@ const makeTraefikReconciler = Effect.gen(function* () {
           return;
         }
 
-        const nextHash = hashContent(yaml);
+        const nextHash = Encoding.encodeHex(
+          yield* crypto.digest("SHA-256", new TextEncoder().encode(yaml)),
+        );
         const existingHash = yield* readFileHash(dynamicFile);
         if (existingHash === nextHash) {
           return;
@@ -99,8 +137,8 @@ const makeTraefikReconciler = Effect.gen(function* () {
       }).pipe(
         Effect.catchTags({
           DatabaseError: (error) => Console.error(`Traefik reconcile failed: ${error.message}`),
-          TraefikWriteError: (error) =>
-            Console.error(`Failed to write Traefik dynamic config: ${error.message}`),
+          PlatformError: (error) => Console.error(`Traefik reconcile failed: ${error.message}`),
+          TraefikWriteError: (error) => Console.error(error.message),
         }),
       ),
     );
