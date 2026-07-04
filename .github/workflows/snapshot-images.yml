@@ -49,4 +49,5 @@ jobs:
           VERSION: sha-${{ github.sha }}
         with:
           files: docker-bake.hcl
+          source: .
           push: true
