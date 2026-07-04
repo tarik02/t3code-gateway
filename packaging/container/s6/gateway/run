@@ -38,4 +38,4 @@ if [ -z "${T3_GATEWAY_T3CODE_WEB_STATIC_ROOT+x}" ] && [ -f "${app_root}/t3code-w
 fi
 
 cd "${app_root}"
-exec node packages/server/src/main.ts
+exec node packages/server/dist/src/main.js

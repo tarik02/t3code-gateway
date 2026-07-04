@@ -10,12 +10,11 @@
     }
   },
   "scripts": {
-    "build": "tsgo --noEmit",
+    "build": "tsgo --noEmit && esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"import { createRequire as __t3CreateRequire } from 'node:module'; const require = __t3CreateRequire(import.meta.url);\" --outfile=dist/src/main.js",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
-    "@node-rs/argon2": "^2.0.2",
     "@t3code-gateway/contracts": "workspace:*",
     "drizzle-orm": "1.0.0-rc.4",
     "effect": "catalog:",
@@ -24,6 +23,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "drizzle-kit": "1.0.0-rc.4",
+    "esbuild": "0.27.0",
     "vite-plus": "catalog:"
   }
 }

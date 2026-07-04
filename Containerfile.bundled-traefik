@@ -35,8 +35,7 @@ COPY packaging/container/s6/traefik /etc/s6-overlay/s6-rc.d/traefik
 COPY packaging/container/s6/bundled-traefik-user /etc/s6-overlay/s6-rc.d/user
 COPY packaging/container/traefik/traefik.yml /etc/traefik/traefik.yml
 
-RUN test -d node_modules \
-  && test -f packages/server/src/main.ts \
+RUN test -f packages/server/dist/src/main.js \
   && test -f packages/web/dist/client/index.html \
   && chmod +x /etc/s6-overlay/s6-rc.d/gateway/run /etc/s6-overlay/s6-rc.d/traefik/run
 

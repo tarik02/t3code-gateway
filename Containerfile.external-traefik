@@ -29,8 +29,7 @@ COPY packaging/runtime/app/ /opt/t3code-gateway/
 COPY packaging/container/s6/gateway /etc/s6-overlay/s6-rc.d/gateway
 COPY packaging/container/s6/external-traefik-user /etc/s6-overlay/s6-rc.d/user
 
-RUN test -d node_modules \
-  && test -f packages/server/src/main.ts \
+RUN test -f packages/server/dist/src/main.js \
   && test -f packages/web/dist/client/index.html \
   && chmod +x /etc/s6-overlay/s6-rc.d/gateway/run
 
