@@ -13,7 +13,7 @@ interface TraefikRouter {
 
 interface TraefikService {
   loadBalancer: {
-    passHostHeader: true;
+    passHostHeader: false;
     servers: ReadonlyArray<{ url: string }>;
   };
 }
@@ -69,7 +69,7 @@ export const buildTraefikDynamicConfig = (
     routers[name] = router;
     services[name] = {
       loadBalancer: {
-        passHostHeader: true,
+        passHostHeader: false,
         servers: [{ url: stripTrailingSlash(environment.endpoint) }],
       },
     };
