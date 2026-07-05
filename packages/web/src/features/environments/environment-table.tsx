@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CopyIcon } from "lucide-react";
 import { useState } from "react";
 
+import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
 import { Label } from "../../components/ui/label.tsx";
@@ -42,7 +43,7 @@ export function EnvironmentTable({
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-xs">
-      <table className="w-full min-w-[980px] table-fixed text-left text-xs">
+      <table className="w-full min-w-[1040px] table-fixed text-left text-xs">
         <EnvironmentTableColumns />
         <thead className="border-b border-border bg-muted/40 text-muted-foreground">
           <tr>
@@ -50,6 +51,7 @@ export function EnvironmentTable({
             <th className="px-4 py-3 font-medium">Slug</th>
             <th className="px-4 py-3 font-medium">Public URL</th>
             <th className="px-2 py-3 text-center font-medium">Enabled</th>
+            <th className="px-2 py-3 text-center font-medium">Web</th>
             <th className="px-4 py-3 font-medium"></th>
           </tr>
         </thead>
@@ -82,9 +84,11 @@ export function EnvironmentTable({
               <td className="px-2 py-3 text-center">
                 <EnvironmentEnabledSwitch environment={environment} />
               </td>
+              <td className="px-2 py-3 text-center">
+                <T3CodeCatalogSwitch environment={environment} />
+              </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
-                  <T3CodeCatalogButton environment={environment} />
                   <Button size="xs" variant="outline" onClick={() => onPair(environment)}>
                     Pair
                   </Button>
@@ -142,10 +146,17 @@ function DeleteEnvironmentButton({
 }: Readonly<{
   environment: EnvironmentRecord;
 }>) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => deleteEnvironment(environment.environmentId),
     onSuccess: async () => {
+      setConfirmOpen(false);
+      toastManager.add({
+        type: "success",
+        title: "Environment deleted",
+        description: environment.label,
+      });
       await queryClient.invalidateQueries({ queryKey: ENVIRONMENTS_QUERY_KEY });
     },
     onError: (cause) => {
@@ -158,25 +169,34 @@ function DeleteEnvironmentButton({
   });
 
   return (
-    <Button
-      size="xs"
-      variant="destructive-outline"
-      disabled={mutation.isPending}
-      onClick={() => {
-        if (window.confirm("Remove this environment?")) {
-          mutation.mutate();
-        }
-      }}
-    >
-      {mutation.isPending ? "Deleting..." : "Delete"}
-    </Button>
+    <>
+      <Button
+        size="xs"
+        variant="destructive-outline"
+        disabled={mutation.isPending}
+        onClick={() => setConfirmOpen(true)}
+      >
+        Delete
+      </Button>
+      <ConfirmDialog
+        destructive
+        open={confirmOpen}
+        title="Delete environment?"
+        description={`Delete ${environment.label} from the gateway? This removes its gateway route and stored token.`}
+        confirmLabel="Delete"
+        pending={mutation.isPending}
+        pendingLabel="Deleting..."
+        onOpenChange={setConfirmOpen}
+        onConfirm={() => mutation.mutate()}
+      />
+    </>
   );
 }
 
 export function EnvironmentTableSkeleton() {
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
-      <table className="w-full min-w-[980px] table-fixed text-left text-xs">
+      <table className="w-full min-w-[1040px] table-fixed text-left text-xs">
         <EnvironmentTableColumns />
         <thead className="border-b border-border bg-muted/40 text-muted-foreground">
           <tr>
@@ -184,6 +204,7 @@ export function EnvironmentTableSkeleton() {
             <th className="px-4 py-3 font-medium">Slug</th>
             <th className="px-4 py-3 font-medium">Public URL</th>
             <th className="px-2 py-3 text-center font-medium">Enabled</th>
+            <th className="px-2 py-3 text-center font-medium">Web</th>
             <th className="px-4 py-3 font-medium"></th>
           </tr>
         </thead>
@@ -202,9 +223,11 @@ export function EnvironmentTableSkeleton() {
               <td className="px-2 py-3">
                 <Skeleton className="mx-auto h-5 w-9 rounded-full" />
               </td>
+              <td className="px-2 py-3">
+                <Skeleton className="mx-auto h-5 w-9 rounded-full" />
+              </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
-                  <Skeleton className="h-6 w-16 rounded-md" />
                   <Skeleton className="h-6 w-10 rounded-md" />
                   <Skeleton className="h-6 w-16 rounded-md" />
                   <Skeleton className="h-6 w-10 rounded-md" />
@@ -226,12 +249,13 @@ function EnvironmentTableColumns() {
       <col className="w-[13%]" />
       <col />
       <col className="w-18" />
-      <col className="w-80" />
+      <col className="w-16" />
+      <col className="w-64" />
     </colgroup>
   );
 }
 
-function T3CodeCatalogButton({
+function T3CodeCatalogSwitch({
   environment,
 }: Readonly<{
   environment: EnvironmentRecord;
@@ -260,6 +284,13 @@ function T3CodeCatalogButton({
       });
       await installEntry(entry);
     },
+    onSuccess: () => {
+      toastManager.add({
+        type: "success",
+        title: "Added to web",
+        description: environment.label,
+      });
+    },
     onError: (cause) => {
       toastManager.add({
         type: "error",
@@ -270,6 +301,13 @@ function T3CodeCatalogButton({
   });
   const removeMutation = useMutation({
     mutationFn: () => removeEnvironment(environment.environmentId),
+    onSuccess: () => {
+      toastManager.add({
+        type: "success",
+        title: "Removed from web",
+        description: environment.label,
+      });
+    },
     onError: (cause) => {
       toastManager.add({
         type: "error",
@@ -282,14 +320,16 @@ function T3CodeCatalogButton({
 
   if (installed) {
     return (
-      <Button
-        size="xs"
-        variant="outline"
+      <Switch
+        aria-label={`Remove ${environment.label} from web`}
+        checked
         disabled={isPending}
-        onClick={() => removeMutation.mutate()}
-      >
-        {isPending ? "Removing..." : "Remove web"}
-      </Button>
+        onCheckedChange={(checked) => {
+          if (!checked) {
+            removeMutation.mutate();
+          }
+        }}
+      />
     );
   }
 
@@ -310,9 +350,15 @@ function T3CodeCatalogButton({
         close();
       }}
     >
-      <PopoverTrigger render={<Button size="xs" variant="outline" disabled={isPending} />}>
-        {isPending ? "Adding..." : "Add web"}
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Switch
+            aria-label={`Add ${environment.label} to web`}
+            checked={false}
+            disabled={isPending}
+          />
+        }
+      />
       <PopoverPopup className="w-72" side="bottom" align="end">
         {clientLabel !== null && !editingClientLabel ? (
           <div className="flex flex-col gap-3">
