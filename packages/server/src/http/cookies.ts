@@ -1,3 +1,5 @@
+import * as Duration from "effect/Duration";
+
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../auth/constants.ts";
 
 export const readSessionToken = (cookies: Readonly<Record<string, string | undefined>>) =>
@@ -9,5 +11,5 @@ export const sessionCookieOptions = (secure: boolean) =>
     path: "/",
     sameSite: "lax",
     secure,
-    maxAge: SESSION_TTL_MS / 1000,
+    maxAge: Duration.millis(SESSION_TTL_MS),
   }) as const;
