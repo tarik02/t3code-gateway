@@ -11,7 +11,6 @@ interface PairingDialogState {
   readonly pairingLink: EnvironmentPairingLink | null;
   readonly pairingResultView: "qr" | "details";
   readonly error: string | null;
-  readonly copied: "link" | "code" | null;
   readonly openFor: (environment: EnvironmentRecord) => void;
   readonly setOpen: (open: boolean) => void;
   readonly setClientLabel: (clientLabel: string) => void;
@@ -23,7 +22,6 @@ interface PairingDialogState {
   readonly setPairingResultView: (pairingResultView: "qr" | "details") => void;
   readonly togglePairingResultView: () => void;
   readonly setError: (error: string | null) => void;
-  readonly setCopied: (copied: "link" | "code" | null) => void;
   readonly reset: () => void;
 }
 
@@ -35,7 +33,6 @@ export const usePairingDialogStore = create<PairingDialogState>((set) => ({
   pairingLink: null,
   pairingResultView: "details",
   error: null,
-  copied: null,
   openFor: (environment) =>
     set({
       open: true,
@@ -45,7 +42,6 @@ export const usePairingDialogStore = create<PairingDialogState>((set) => ({
       pairingLink: null,
       pairingResultView: "details",
       error: null,
-      copied: null,
     }),
   setOpen: (open) => set({ open }),
   setClientLabel: (clientLabel) => set({ clientLabel }),
@@ -60,15 +56,13 @@ export const usePairingDialogStore = create<PairingDialogState>((set) => ({
           : [...state.scopes, scope]
         : state.scopes.filter((currentScope) => currentScope !== scope),
     })),
-  setPairingLink: (pairingLink) =>
-    set({ pairingLink, pairingResultView: "details", error: null, copied: null }),
+  setPairingLink: (pairingLink) => set({ pairingLink, pairingResultView: "details", error: null }),
   setPairingResultView: (pairingResultView) => set({ pairingResultView }),
   togglePairingResultView: () =>
     set((state) => ({
       pairingResultView: state.pairingResultView === "qr" ? "details" : "qr",
     })),
   setError: (error) => set({ error }),
-  setCopied: (copied) => set({ copied }),
   reset: () =>
     set({
       open: false,
@@ -78,6 +72,5 @@ export const usePairingDialogStore = create<PairingDialogState>((set) => ({
       pairingLink: null,
       pairingResultView: "details",
       error: null,
-      copied: null,
     }),
 }));

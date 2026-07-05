@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
-import { CopyIcon } from "lucide-react";
 
+import { CopyButton } from "../../components/copy-button.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import {
   Dialog,
@@ -28,7 +28,6 @@ export function PairingDialog() {
   const pairingLink = usePairingDialogStore((state) => state.pairingLink);
   const pairingResultView = usePairingDialogStore((state) => state.pairingResultView);
   const error = usePairingDialogStore((state) => state.error);
-  const copied = usePairingDialogStore((state) => state.copied);
   const setOpen = usePairingDialogStore((state) => state.setOpen);
   const setClientLabel = usePairingDialogStore((state) => state.setClientLabel);
   const setReadOnlyScopes = usePairingDialogStore((state) => state.setReadOnlyScopes);
@@ -37,7 +36,6 @@ export function PairingDialog() {
   const setPairingLink = usePairingDialogStore((state) => state.setPairingLink);
   const togglePairingResultView = usePairingDialogStore((state) => state.togglePairingResultView);
   const setError = usePairingDialogStore((state) => state.setError);
-  const setCopied = usePairingDialogStore((state) => state.setCopied);
   const reset = usePairingDialogStore((state) => state.reset);
   const canSubmit = environment !== null && clientLabel.length > 0 && scopes.length > 0;
   const isShowingQrResult = pairingLink !== null && pairingResultView === "qr";
@@ -57,11 +55,6 @@ export function PairingDialog() {
       setError(cause instanceof Error ? cause.message : "Create failed");
     },
   });
-
-  const copyValue = async (kind: "link" | "code", value: string) => {
-    await navigator.clipboard.writeText(value);
-    setCopied(kind);
-  };
 
   return (
     <Dialog
@@ -180,18 +173,8 @@ export function PairingDialog() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <PairingValue
-                    label="Public link"
-                    value={pairingLink.pairingUrl}
-                    copied={copied === "link"}
-                    onCopy={() => void copyValue("link", pairingLink.pairingUrl)}
-                  />
-                  <PairingValue
-                    label="Pairing code"
-                    value={pairingLink.pairingCode}
-                    copied={copied === "code"}
-                    onCopy={() => void copyValue("code", pairingLink.pairingCode)}
-                  />
+                  <PairingValue label="Public link" value={pairingLink.pairingUrl} />
+                  <PairingValue label="Pairing code" value={pairingLink.pairingCode} />
                 </div>
               )}
             </DialogPanel>
@@ -213,13 +196,9 @@ export function PairingDialog() {
 function PairingValue({
   label,
   value,
-  copied,
-  onCopy,
 }: Readonly<{
   label: string;
   value: string;
-  copied: boolean;
-  onCopy: () => void;
 }>) {
   return (
     <div className="space-y-1.5">
@@ -233,16 +212,11 @@ function PairingValue({
           onClick={(event) => event.currentTarget.select()}
           onFocus={(event) => event.currentTarget.select()}
         />
-        <Button
-          aria-label={copied ? `${label} copied` : `Copy ${label}`}
+        <CopyButton
           className="absolute end-1 top-1/2 size-6 -translate-y-1/2 rounded-md"
-          size="icon"
-          title={copied ? "Copied" : "Copy"}
-          variant="ghost"
-          onClick={onCopy}
-        >
-          <CopyIcon className="size-3.5" />
-        </Button>
+          label={label}
+          value={value}
+        />
       </div>
     </div>
   );

@@ -1,9 +1,9 @@
 import type { EnvironmentRecord } from "@t3code-gateway/contracts/schemas";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CopyIcon } from "lucide-react";
 import { useState } from "react";
 
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
+import { CopyButton } from "../../components/copy-button.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
 import { Label } from "../../components/ui/label.tsx";
@@ -31,8 +31,6 @@ export function EnvironmentTable({
   onPair: (environment: EnvironmentRecord) => void;
   onSessions: (environment: EnvironmentRecord) => void;
 }>) {
-  const [copiedUrlEnvironmentId, setCopiedUrlEnvironmentId] = useState<string | null>(null);
-
   if (environments.length === 0) {
     return (
       <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">
@@ -70,14 +68,10 @@ export function EnvironmentTable({
                   >
                     {environment.publicUrl}
                   </a>
-                  <CopyUrlButton
-                    copied={copiedUrlEnvironmentId === environment.environmentId}
-                    label={environment.label}
-                    onCopy={() => {
-                      void navigator.clipboard.writeText(environment.publicUrl);
-                      setCopiedUrlEnvironmentId(environment.environmentId);
-                      window.setTimeout(() => setCopiedUrlEnvironmentId(null), 1200);
-                    }}
+                  <CopyButton
+                    className="size-5 rounded-sm opacity-55 hover:opacity-100 [&_svg]:size-3"
+                    label={`${environment.label} public URL`}
+                    value={environment.publicUrl}
                   />
                 </div>
               </td>
@@ -406,40 +400,6 @@ function T3CodeCatalogSwitch({
             </div>
           </form>
         )}
-      </PopoverPopup>
-    </Popover>
-  );
-}
-
-function CopyUrlButton({
-  copied,
-  label,
-  onCopy,
-}: Readonly<{
-  copied: boolean;
-  label: string;
-  onCopy: () => void;
-}>) {
-  return (
-    <Popover>
-      <PopoverTrigger
-        openOnHover
-        delay={250}
-        closeDelay={100}
-        render={
-          <Button
-            aria-label={copied ? `${label} public URL copied` : `Copy ${label} public URL`}
-            className="size-5 rounded-sm opacity-55 hover:opacity-100 [&_svg]:size-3"
-            size="icon"
-            variant="ghost"
-            onClick={onCopy}
-          />
-        }
-      >
-        <CopyIcon />
-      </PopoverTrigger>
-      <PopoverPopup className="whitespace-nowrap" side="top" align="center" tooltipStyle>
-        {copied ? "Copied" : "Copy URL"}
       </PopoverPopup>
     </Popover>
   );
