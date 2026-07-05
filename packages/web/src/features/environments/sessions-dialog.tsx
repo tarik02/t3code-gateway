@@ -2,6 +2,7 @@ import type { EnvironmentClientSession } from "@t3code-gateway/contracts/schemas
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
+import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import {
   Dialog,
@@ -12,6 +13,7 @@ import {
 } from "../../components/ui/dialog.tsx";
 import { Popover, PopoverPopup, PopoverTrigger } from "../../components/ui/popover.tsx";
 import { Skeleton } from "../../components/ui/skeleton.tsx";
+import { toastManager } from "../../components/ui/toast.tsx";
 import { cn } from "../../lib/utils.ts";
 import { listEnvironmentClients, revokeEnvironmentClient } from "../../lib/gateway-api.ts";
 import { useSessionsDialogStore } from "./sessions-dialog-store.ts";
@@ -23,9 +25,15 @@ export function SessionsDialog() {
   const environment = useSessionsDialogStore((state) => state.environment);
   const clientError = useSessionsDialogStore((state) => state.clientError);
   const revokingSessionId = useSessionsDialogStore((state) => state.revokingSessionId);
+  const confirmingRevokeSessionId = useSessionsDialogStore(
+    (state) => state.confirmingRevokeSessionId,
+  );
   const setOpen = useSessionsDialogStore((state) => state.setOpen);
   const setClientError = useSessionsDialogStore((state) => state.setClientError);
   const setRevokingSessionId = useSessionsDialogStore((state) => state.setRevokingSessionId);
+  const setConfirmingRevokeSessionId = useSessionsDialogStore(
+    (state) => state.setConfirmingRevokeSessionId,
+  );
   const reset = useSessionsDialogStore((state) => state.reset);
 
   const clientsQuery = useQuery({
@@ -48,12 +56,24 @@ export function SessionsDialog() {
     },
     onSuccess: async () => {
       setClientError(null);
+      setConfirmingRevokeSessionId(null);
+      toastManager.add({
+        type: "success",
+        title: "Client revoked",
+        description: "The client session can no longer access this environment.",
+      });
       await queryClient.invalidateQueries({
         queryKey: environmentClientsQueryKey(environment?.environmentId),
       });
     },
     onError: (cause) => {
-      setClientError(cause instanceof Error ? cause.message : "Revoke failed");
+      const message = cause instanceof Error ? cause.message : "Revoke failed";
+      setClientError(message);
+      toastManager.add({
+        type: "error",
+        title: "Revoke failed",
+        description: message,
+      });
     },
     onSettled: () => {
       setRevokingSessionId(null);
@@ -61,44 +81,61 @@ export function SessionsDialog() {
   });
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={setOpen}
-      onOpenChangeComplete={(nextOpen) => {
-        if (!nextOpen) {
-          reset();
-        }
-      }}
-    >
-      <DialogPopup className="h-[min(34rem,calc(100dvh-2rem))] max-w-2xl border-border/60">
-        <DialogHeader>
-          <DialogTitle>Authorized clients</DialogTitle>
-        </DialogHeader>
-        <div className="min-h-0 flex-1">
-          <DialogPanel>
-            <ClientSessionsSection
-              clients={clientsQuery.data ?? []}
-              error={
-                clientsQuery.error instanceof Error
-                  ? clientsQuery.error.message
-                  : clientsQuery.error
-                    ? "Failed to load client sessions"
-                    : clientError
-              }
-              isLoading={clientsQuery.isLoading}
-              isRevoking={revokeClientMutation.isPending}
-              revokingSessionId={revokingSessionId}
-              onRevoke={(sessionId) => {
-                if (window.confirm("Revoke this client session?")) {
-                  setRevokingSessionId(sessionId);
-                  revokeClientMutation.mutate(sessionId);
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        onOpenChangeComplete={(nextOpen) => {
+          if (!nextOpen) {
+            reset();
+          }
+        }}
+      >
+        <DialogPopup className="h-[min(34rem,calc(100dvh-2rem))] max-w-2xl border-border/60">
+          <DialogHeader>
+            <DialogTitle>Authorized clients</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1">
+            <DialogPanel>
+              <ClientSessionsSection
+                clients={clientsQuery.data ?? []}
+                error={
+                  clientsQuery.error instanceof Error
+                    ? clientsQuery.error.message
+                    : clientsQuery.error
+                      ? "Failed to load client sessions"
+                      : clientError
                 }
-              }}
-            />
-          </DialogPanel>
-        </div>
-      </DialogPopup>
-    </Dialog>
+                isLoading={clientsQuery.isLoading}
+                isRevoking={revokeClientMutation.isPending}
+                revokingSessionId={revokingSessionId}
+                onRevoke={setConfirmingRevokeSessionId}
+              />
+            </DialogPanel>
+          </div>
+        </DialogPopup>
+      </Dialog>
+      <ConfirmDialog
+        destructive
+        open={confirmingRevokeSessionId !== null}
+        title="Revoke client session?"
+        description="Revoke this client session? The client will need a new pairing link before it can connect again."
+        confirmLabel="Revoke"
+        pending={revokeClientMutation.isPending}
+        pendingLabel="Revoking..."
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setConfirmingRevokeSessionId(null);
+          }
+        }}
+        onConfirm={() => {
+          if (confirmingRevokeSessionId !== null) {
+            setRevokingSessionId(confirmingRevokeSessionId);
+            revokeClientMutation.mutate(confirmingRevokeSessionId);
+          }
+        }}
+      />
+    </>
   );
 }
 
