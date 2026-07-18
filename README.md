@@ -13,6 +13,26 @@ It gives you:
 
 The gateway is not a hosted control plane and does not proxy normal T3 Code traffic. It manages environment metadata, credentials, and Traefik routing. Traefik sends environment traffic directly to the configured T3 Code instance.
 
+## Screenshots
+
+### Environment management
+
+![Gateway admin showing example environments](.github/screenshots/admin-environments.png)
+
+![Add environment dialog](.github/screenshots/add-environment.png)
+
+![Edit environment dialog](.github/screenshots/edit-environment.png)
+
+### T3 Code Web
+
+![Add an environment to T3 Code Web](.github/screenshots/web-enrollment.png)
+
+### Pairing and access
+
+![Pairing link permissions](.github/screenshots/pairing-link.png)
+
+![Authorized clients](.github/screenshots/authorized-clients.png)
+
 ## How It Works
 
 T3 Code Gateway has three surfaces:
