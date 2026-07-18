@@ -3,7 +3,9 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 const databaseName = "t3code:connection-runtime";
+const databaseVersion = 2;
 const storeName = "catalog";
+const requiredStoreNames = ["catalog", "shell", "thread"] as const;
 const documentKey = "document";
 const gatewayPrefix = "gateway:";
 
@@ -63,14 +65,19 @@ const parseCatalog = (value: unknown): CatalogDocument => {
   }
 };
 
+const createMissingStores = (database: IDBDatabase) => {
+  for (const name of requiredStoreNames) {
+    if (!database.objectStoreNames.contains(name)) {
+      database.createObjectStore(name);
+    }
+  }
+};
+
 const openDatabase = () =>
   new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(databaseName, 2);
+    const request = indexedDB.open(databaseName, databaseVersion);
     request.addEventListener("upgradeneeded", () => {
-      const database = request.result;
-      if (!database.objectStoreNames.contains(storeName)) {
-        database.createObjectStore(storeName);
-      }
+      createMissingStores(request.result);
     });
     request.addEventListener("success", () => resolve(request.result));
     request.addEventListener("error", () => reject(request.error));
