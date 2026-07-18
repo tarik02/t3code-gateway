@@ -2,7 +2,7 @@
 set -eu
 
 root_dir="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
-app_dir="${root_dir}/packaging/runtime/app"
+app_dir="${T3CODE_RUNTIME_APP_DIR:-${root_dir}/packaging/runtime/app}"
 t3code_web_dist="${T3CODE_WEB_DIST:-}"
 
 rm -rf "${app_dir}"

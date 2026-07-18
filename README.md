@@ -4,7 +4,7 @@ T3 Code Gateway manages multiple self-hosted T3 Code environments behind one pub
 
 It gives you:
 
-- a public T3 Code web app at `/`
+- an optional T3 Code web app at `/`
 - an admin app at `/admin`
 - environment-specific public URLs through Traefik
 - pairing links and QR codes for gateway-managed clients
@@ -37,11 +37,11 @@ The gateway is not a hosted control plane and does not proxy normal T3 Code traf
 
 T3 Code Gateway has three surfaces:
 
-| Surface       | Path             | Purpose                                                                                                |
-| ------------- | ---------------- | ------------------------------------------------------------------------------------------------------ |
-| T3 Code web   | `/`              | Serves the packaged T3 Code web app with gateway-managed environments injected into its local catalog. |
-| Gateway admin | `/admin`         | Manage environments, sessions, pairing links, password, and diagnostics.                               |
-| Gateway API   | `/api/gateway/*` | Admin UI RPC, auth, catalog sync, and Traefik config inspection.                                       |
+| Surface       | Path             | Purpose                                                                                           |
+| ------------- | ---------------- | ------------------------------------------------------------------------------------------------- |
+| T3 Code web   | `/`              | Serves the optional packaged T3 Code web app. Redirects to `/admin` when unavailable or disabled. |
+| Gateway admin | `/admin`         | Manage environments, sessions, pairing links, password, and diagnostics.                          |
+| Gateway API   | `/api/gateway/*` | Admin UI RPC, auth, catalog sync, and Traefik config inspection.                                  |
 
 Each environment gets a public URL derived from its slug:
 
@@ -137,7 +137,9 @@ Revocation only happens when explicitly requested from the UI.
 
 ## T3 Code Web Catalog Sync
 
-The gateway serves the packaged T3 Code web dist at `/`.
+The gateway serves the packaged T3 Code web dist at `/` when enabled. Set
+`T3_GATEWAY_T3CODE_WEB_ENABLED=false` to disable it. When disabled or not included in the
+image, `/` temporarily redirects to `/admin`.
 
 At page load, the gateway bootstrap syncs enabled environments into T3 Code's local browser catalog:
 
@@ -190,11 +192,20 @@ Bundled Traefik mode:
 ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>
 ```
 
+Both modes also have smaller variants without the T3 Code web dist:
+
+```text
+ghcr.io/tarik02/t3code-gateway:<version>-no-t3code-web
+ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>-no-t3code-web
+```
+
 Release tags are versions:
 
 ```text
 ghcr.io/tarik02/t3code-gateway:0.1.0
 ghcr.io/tarik02/t3code-gateway/bundled-traefik:0.1.0
+ghcr.io/tarik02/t3code-gateway:0.1.0-no-t3code-web
+ghcr.io/tarik02/t3code-gateway/bundled-traefik:0.1.0-no-t3code-web
 ```
 
 Every `master` push also publishes test images tagged with the full commit SHA:
@@ -202,6 +213,8 @@ Every `master` push also publishes test images tagged with the full commit SHA:
 ```text
 ghcr.io/tarik02/t3code-gateway:sha-<full-commit-sha>
 ghcr.io/tarik02/t3code-gateway/bundled-traefik:sha-<full-commit-sha>
+ghcr.io/tarik02/t3code-gateway:sha-<full-commit-sha>-no-t3code-web
+ghcr.io/tarik02/t3code-gateway/bundled-traefik:sha-<full-commit-sha>-no-t3code-web
 ```
 
 ## External Traefik Usage
@@ -289,6 +302,7 @@ The bundled Traefik config reads dynamic routers from:
 | `T3_GATEWAY_TRAEFIK_CERT_RESOLVER`    | empty                                    | Optional Traefik cert resolver.                                 |
 | `T3_GATEWAY_TRAEFIK_AUTH_MIDDLEWARES` | empty                                    | Comma-separated middleware names attached to generated routers. |
 | `T3_GATEWAY_ADMIN_STATIC_ROOT`        | unset                                    | Built admin UI root.                                            |
+| `T3_GATEWAY_T3CODE_WEB_ENABLED`       | `true`                                   | Whether the T3 Code web app is served at `/`.                   |
 | `T3_GATEWAY_T3CODE_WEB_STATIC_ROOT`   | unset                                    | Built T3 Code web dist served at `/`.                           |
 | `T3_GATEWAY_T3CODE_WEB_BUILD_ID`      | unset                                    | Optional build id exposed to browser catalog sync.              |
 

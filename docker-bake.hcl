@@ -31,6 +31,31 @@ target "bundled-traefik" {
   cache-to = ["type=gha,scope=bundled-traefik,mode=max"]
 }
 
+target "external-traefik-no-t3code-web" {
+  inherits = ["external-traefik"]
+  args = {
+    T3CODE_RUNTIME_APP_DIR = "packaging/runtime/app-no-t3code-web"
+  }
+  tags = ["${EXTERNAL_TRAEFIK_IMAGE}:${VERSION}-no-t3code-web"]
+  cache-from = ["type=gha,scope=external-traefik-no-t3code-web", "type=gha,scope=external-traefik"]
+  cache-to = ["type=gha,scope=external-traefik-no-t3code-web,mode=max"]
+}
+
+target "bundled-traefik-no-t3code-web" {
+  inherits = ["bundled-traefik"]
+  args = {
+    T3CODE_RUNTIME_APP_DIR = "packaging/runtime/app-no-t3code-web"
+  }
+  tags = ["${BUNDLED_TRAEFIK_IMAGE}:${VERSION}-no-t3code-web"]
+  cache-from = ["type=gha,scope=bundled-traefik-no-t3code-web", "type=gha,scope=bundled-traefik"]
+  cache-to = ["type=gha,scope=bundled-traefik-no-t3code-web,mode=max"]
+}
+
 group "default" {
-  targets = ["external-traefik", "bundled-traefik"]
+  targets = [
+    "external-traefik",
+    "bundled-traefik",
+    "external-traefik-no-t3code-web",
+    "bundled-traefik-no-t3code-web",
+  ]
 }
