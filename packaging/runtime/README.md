@@ -1,5 +1,4 @@
-Container builds expect a prepared runtime app at `packaging/runtime/app`. Set
-`T3CODE_RUNTIME_APP_DIR` to prepare another runtime directory for an image variant.
+Container builds expect a prepared runtime app at `packaging/runtime/app`.
 
 Required layout:
 

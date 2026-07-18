@@ -173,48 +173,30 @@ http:
           - url: http://10.0.0.20:3773
 ```
 
-There are two deployment modes:
+The container supports two deployment modes:
 
 - External Traefik: Gateway writes the dynamic file, and your separately managed Traefik includes it.
-- Bundled Traefik: Gateway and Traefik run in one s6-based container.
+- Bundled Traefik: Set `T3_GATEWAY_BUNDLED_TRAEFIK_ENABLED=true` to run Gateway and
+  Traefik in the same container.
 
 ## Images
 
-External Traefik mode:
+The published image contains Gateway, both web apps, and optional bundled Traefik:
 
 ```text
 ghcr.io/tarik02/t3code-gateway:<version>
-```
-
-Bundled Traefik mode:
-
-```text
-ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>
-```
-
-Both modes also have smaller variants without the T3 Code web dist:
-
-```text
-ghcr.io/tarik02/t3code-gateway:<version>-no-t3code-web
-ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>-no-t3code-web
 ```
 
 Release tags are versions:
 
 ```text
 ghcr.io/tarik02/t3code-gateway:0.1.0
-ghcr.io/tarik02/t3code-gateway/bundled-traefik:0.1.0
-ghcr.io/tarik02/t3code-gateway:0.1.0-no-t3code-web
-ghcr.io/tarik02/t3code-gateway/bundled-traefik:0.1.0-no-t3code-web
 ```
 
 Every `master` push also publishes test images tagged with the full commit SHA:
 
 ```text
 ghcr.io/tarik02/t3code-gateway:sha-<full-commit-sha>
-ghcr.io/tarik02/t3code-gateway/bundled-traefik:sha-<full-commit-sha>
-ghcr.io/tarik02/t3code-gateway:sha-<full-commit-sha>-no-t3code-web
-ghcr.io/tarik02/t3code-gateway/bundled-traefik:sha-<full-commit-sha>-no-t3code-web
 ```
 
 ## External Traefik Usage
@@ -261,13 +243,7 @@ https://desktop.code.example.com -> configured desktop environment
 
 ## Bundled Traefik Usage
 
-Use this image when Gateway should run Traefik in the same container:
-
-```text
-ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>
-```
-
-Run it with ports `80`, `443`, and optionally `8787` exposed:
+Enable bundled Traefik and expose ports `80`, `443`, and optionally `8787`:
 
 ```sh
 docker run \
@@ -277,8 +253,9 @@ docker run \
   -p 443:443 \
   -p 8787:8787 \
   -v t3code-gateway-data:/data \
+  -e T3_GATEWAY_BUNDLED_TRAEFIK_ENABLED=true \
   -e T3_GATEWAY_PUBLIC_BASE_DOMAIN=code.example.com \
-  ghcr.io/tarik02/t3code-gateway/bundled-traefik:<version>
+  ghcr.io/tarik02/t3code-gateway:<version>
 ```
 
 The bundled Traefik config reads dynamic routers from:
@@ -296,6 +273,7 @@ The bundled Traefik config reads dynamic routers from:
 | `T3_GATEWAY_LISTEN_PORT`              | `8787`                                   | Server bind port.                                               |
 | `T3_GATEWAY_PUBLIC_BASE_DOMAIN`       | `localhost`                              | Base domain for generated environment public URLs.              |
 | `T3_GATEWAY_SECRET_KEY_FILE`          | required                                 | 32-byte encryption key file for stored tokens.                  |
+| `T3_GATEWAY_BUNDLED_TRAEFIK_ENABLED`  | `false`                                  | Whether bundled Traefik runs in the container.                  |
 | `T3_GATEWAY_TRAEFIK_DYNAMIC_FILE`     | unset                                    | Path for generated Traefik dynamic config.                      |
 | `T3_GATEWAY_TRAEFIK_ENTRYPOINT`       | `websecure`                              | Comma-separated entrypoints for generated routers.              |
 | `T3_GATEWAY_TRAEFIK_TLS_ENABLED`      | `true`                                   | Whether generated routers include TLS config.                   |
